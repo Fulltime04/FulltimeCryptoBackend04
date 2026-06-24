@@ -19,11 +19,39 @@ class Transaction(models.Model):
 
     amount = models.DecimalField(max_digits=20, decimal_places=2, default=0)
     coin = models.CharField(max_length=10, null=True, blank=True)
+
+    quantity = models.DecimalField(max_digits=20, decimal_places=8, default=0)
+    price_per_coin = models.DecimalField(max_digits=20, decimal_places=2, default=0)
+    profit = models.DecimalField(max_digits=20, decimal_places=2, default=0)
+    fee = models.DecimalField(max_digits=20, decimal_places=2, default=0)
     created_at = models.DateTimeField(auto_now_add=True)
+
+
 
 
 class CoinHolding(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     coin = models.CharField(max_length=20)
     quantity = models.DecimalField(max_digits=20, decimal_places=8, default=0)
+    average_buy_price = models.DecimalField(max_digits=20, decimal_places=2, default=0)
+
+
+class Notifications(models.Model):
+    Types = (
+        ("BUY", "Buy"),
+        ("SELL", "Sell"),
+        ("DEPOSIT", "Deposit"),
+        ("WITHDRAW", "Withdraw"),
+        ("CURRENCY_CONVERTER", "Currency_Converter"),
+        ("ALERT", "Price Alert"),
+        ("SYSTEM", "System"),
+        ("MESSAGE", "Message"),
+    )
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="notifications")
+    type = models.CharField(max_length=20, choices=Types)
+    title = models.CharField(max_length=10, null=True, blank=True)
+    message = models.TextField()
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
 # Create your models here.

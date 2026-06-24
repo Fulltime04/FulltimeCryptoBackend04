@@ -11,6 +11,8 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 from pathlib import Path
+
+from django.conf.global_settings import CSRF_TRUSTED_ORIGINS
 from dotenv import load_dotenv
 import os
 
@@ -31,7 +33,10 @@ SECRET_KEY = 'django-insecure-4mxhdpagrun$(nzciln3eg8hnysv&_=$(d8dgr7=w%anj!u#ge
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+    "localhost",
+    "127.0.0.1"
+]
 
 
 # Application definition
@@ -82,8 +87,7 @@ WSGI_APPLICATION = 'crypto.wsgi.application'
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:63343",
 ]
-CORS_ALLOW_ALL_ORIGINS = True
-
+CORS_ALLOW_CREDENTIALS = True
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
@@ -130,3 +134,10 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:63343",
+    "http://127.0.0.1:63343",
+]
+
+
