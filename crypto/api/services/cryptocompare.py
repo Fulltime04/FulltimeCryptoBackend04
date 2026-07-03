@@ -45,17 +45,20 @@ NOTIFICATION_BANK = {
             "Order executed successfully. You acquired {quantity} {coin} for ${amount}.",
             "Trade confirmed! {quantity} {coin} has been added to your portfolio at a total cost of ${amount}.",
             "Purchase successful. Your account has been updated with {quantity} {coin} and charged ${amount}."
-        ]
+        ],
+        "icons": ["🟢", "📈", "💹", "🪙"],
+
     },
 
     "SELL": {
-        "title": "Sale Completed",
+        "title": "Sales Completed",
         "messages": [
             "You successfully sold {quantity} {coin}. ${amount} has been credited to your account.",
             "Sale confirmed. {quantity} {coin} was sold and ${amount} has been added to your balance.",
             "Trade completed successfully. Your sale of {quantity} {coin} generated ${amount}.",
             "Order filled! ${amount} has been credited following the sale of {quantity} {coin}."
-        ]
+        ],
+        "icons": ["🔴", "📉", "💸", "💰"],
     },
 
     "DEPOSIT": {
@@ -65,7 +68,8 @@ NOTIFICATION_BANK = {
             "Funds received! ${amount} is now available in your account.",
             "Deposit successful. Your wallet balance has been credited with ${amount}.",
             "We've confirmed your deposit of ${amount}. The funds are ready to use."
-        ]
+        ],
+        "icons": ["💵", "🏦", "💳", "📥"],
     },
 
     "WITHDRAW": {
@@ -75,17 +79,19 @@ NOTIFICATION_BANK = {
             "Withdrawal completed. ${amount} has been sent from your account.",
             "Your request to withdraw ${amount} was approved and processed.",
             "Funds on the way! Your withdrawal of ${amount} has been initiated."
-        ]
+        ],
+        "icons": ["💸", "📤", "🏧", "💰"],
     },
 
     "CURRENCY_CONVERTER": {
         "title": "Conversion Successful",
         "messages": [
-            "{from_amount} {from_currency} was successfully converted into {to_amount} {to_currency}.",
-            "Conversion complete. You received {to_amount} {to_currency} from {from_amount} {from_currency}.",
-            "Exchange successful! {from_amount} {from_currency} is now {to_amount} {to_currency}.",
+            "{from_amount} {from_Currency} was successfully converted into {to_amount} {to_Currency}.",
+            "Conversion complete. You received {to_amount} {to_Currency} from {from_amount} {from_Currency}.",
+            "Exchange successful! {from_amount} {from_Currency} is now {to_amount} {to_Currency}.",
             "Your currency conversion has been completed at the current market rate."
-        ]
+        ],
+        "icons": ["💱", "🔄", "🌍", "💹"],
     },
 
     "ALERT": {
@@ -95,7 +101,8 @@ NOTIFICATION_BANK = {
             "Market alert! {coin} is now trading at ${price}.",
             "Your price alert for {coin} has been triggered at ${price}.",
             "Good news! {coin} has hit the price level you were monitoring (${price})."
-        ]
+        ],
+        "icons": ["🚨", "🔔", "⚠️", "📢"],
     },
 
     "SYSTEM": {
@@ -105,7 +112,8 @@ NOTIFICATION_BANK = {
             "Important update: {message}",
             "System announcement: {message}",
             "Attention: {message}"
-        ]
+        ],
+        "icons": ["⚙️", "🛠️", "📡", "🔷"],
     },
 
     "MESSAGE": {
@@ -115,7 +123,8 @@ NOTIFICATION_BANK = {
             "You have received a new message from {sender}.",
             "{sender} just contacted you. Open your inbox to read the message.",
             "A new message from {sender} is waiting in your inbox."
-        ]
+        ],
+        "icons":  ["💬", "📩", "✉️", "📨"],
     }
 }
 
@@ -287,4 +296,286 @@ CURRENCY_TO_COUNTRY = {
     "ZMW": "zm",
     "ZWG": "zw",
     "ZWL": "zw"
+}
+
+
+
+TRANSACTION_CARD_BANK = {
+
+    "BUY": {
+        "icons": [
+            "🟢",
+            "📈",
+            "💹",
+            "🪙",
+            "🚀",
+        ],
+
+        "titles": [
+            "Crypto Purchased",
+            "Buy Order Completed",
+            "Purchase Successful",
+            "Investment Added",
+            "Asset Acquired",
+        ],
+
+        "messages": [
+            "Your purchase was completed successfully.",
+            "Your investment has been added to your portfolio.",
+            "Your crypto purchase has been confirmed.",
+            "You successfully bought your selected cryptocurrency.",
+            "Another step towards growing your portfolio!",
+        ],
+
+        "status": [
+            "Completed",
+            "Successful",
+            "Confirmed",
+            "Executed",
+            "Processed",
+            "Approved",
+        ]
+    },
+
+
+    "SELL": {
+        "icons": [
+            "🔴",
+            "📉",
+            "💰",
+            "💸",
+            "🏦",
+        ],
+
+        "titles": [
+            "Crypto Sold",
+            "Sell Order Completed",
+            "Sale Successful",
+            "Asset Sold",
+            "Trade Executed",
+        ],
+
+        "messages": [
+            "Your sell order has been completed.",
+            "Your cryptocurrency has been sold successfully.",
+            "Funds from your sale have been credited.",
+            "Your trade has been executed successfully.",
+            "Sale completed without any issues.",
+        ],
+
+        "status": [
+            "Completed",
+            "Successful",
+            "Executed",
+            "Confirmed",
+            "Processed",
+        ]
+    },
+
+
+    "DEPOSIT": {
+        "icons": [
+            "💰",
+            "🏦",
+            "💵",
+            "💳",
+            "📥",
+        ],
+
+        "titles": [
+            "Deposit Received",
+            "Wallet Funded",
+            "Deposit Successful",
+            "Funds Added",
+            "Balance Updated",
+        ],
+
+        "messages": [
+            "Your funds have been added successfully.",
+            "Your wallet balance has been updated.",
+            "Deposit completed successfully.",
+            "Your account has been funded.",
+            "Funds received and available for trading.",
+        ],
+
+        "status": [
+            "Successful",
+            "Completed",
+            "Approved",
+            "Received",
+            "Confirmed",
+        ]
+    },
+
+
+    "WITHDRAW": {
+        "icons": [
+            "💸",
+            "📤",
+            "🏧",
+            "💵",
+            "🚚",
+        ],
+
+        "titles": [
+            "Withdrawal Processed",
+            "Funds Sent",
+            "Withdrawal Successful",
+            "Transfer Completed",
+            "Cash Out Successful",
+        ],
+
+        "messages": [
+            "Your withdrawal has been processed.",
+            "Funds are on their way.",
+            "Withdrawal completed successfully.",
+            "Your transfer request has been fulfilled.",
+            "Your funds have left your wallet.",
+        ],
+
+        "status": [
+            "Completed",
+            "Successful",
+            "Processed",
+            "Sent",
+            "Confirmed",
+        ]
+    },
+
+
+    "CURRENCY_CONVERTER": {
+        "icons": [
+            "🔄",
+            "💱",
+            "🌍",
+            "💹",
+            "🔁",
+        ],
+
+        "titles": [
+            "Currency Converted",
+            "Conversion Successful",
+            "Exchange Completed",
+            "Funds Converted",
+            "Conversion Processed",
+        ],
+
+        "messages": [
+            "Your currency conversion was successful.",
+            "Exchange completed successfully.",
+            "Your funds have been converted.",
+            "Conversion completed instantly.",
+            "Exchange processed successfully.",
+        ],
+
+        "status": [
+            "Completed",
+            "Successful",
+            "Processed",
+            "Confirmed",
+        ]
+    },
+
+
+    "ALERT": {
+        "icons": [
+            "🔔",
+            "📢",
+            "⚡",
+            "🚨",
+            "📈",
+        ],
+
+        "titles": [
+            "Price Alert",
+            "Market Alert",
+            "Target Reached",
+            "Price Update",
+            "Trading Alert",
+        ],
+
+        "messages": [
+            "One of your price alerts has been triggered.",
+            "A watched asset has reached your target.",
+            "Market conditions have changed.",
+            "Stay informed with the latest price movement.",
+            "Your alert has been activated.",
+        ],
+
+        "status": [
+            "Triggered",
+            "Delivered",
+            "Updated",
+            "Active",
+        ]
+    },
+
+
+    "MESSAGE": {
+        "icons": [
+            "💬",
+            "📩",
+            "✉️",
+            "📨",
+            "💙",
+        ],
+
+        "titles": [
+            "New Message",
+            "Inbox Update",
+            "Conversation Started",
+            "Message Received",
+            "Someone Reached Out",
+        ],
+
+        "messages": [
+            "Someone sent you a thoughtful message.",
+            "You have a new conversation waiting.",
+            "A new message has arrived in your inbox.",
+            "Stay connected—someone just messaged you.",
+            "Your inbox has something new for you.",
+        ],
+
+        "status": [
+            "Delivered",
+            "Received",
+            "Unread",
+            "Available",
+        ]
+    },
+
+
+    "SYSTEM": {
+        "icons": [
+            "⚙️",
+            "🛡️",
+            "📢",
+            "✨",
+            "🔐",
+        ],
+
+        "titles": [
+            "System Update",
+            "Platform Notice",
+            "Service Update",
+            "Maintenance Notice",
+            "Account Update",
+        ],
+
+        "messages": [
+            "Everything is running smoothly.",
+            "Your account remains secure.",
+            "Thank you for choosing our platform.",
+            "The platform has been updated successfully.",
+            "We're constantly improving your experience.",
+        ],
+
+        "status": [
+            "Completed",
+            "Updated",
+            "Delivered",
+            "Successful",
+        ]
+    }
+
 }

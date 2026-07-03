@@ -25,6 +25,13 @@ class Transaction(models.Model):
     profit = models.DecimalField(max_digits=20, decimal_places=2, default=0)
     fee = models.DecimalField(max_digits=20, decimal_places=2, default=0)
     created_at = models.DateTimeField(auto_now_add=True)
+    icon = models.CharField(max_length=100, default="")
+
+    title = models.CharField(max_length=100, default="")
+
+    message = models.TextField(default="")
+
+    status = models.CharField(max_length=50, default="")
 
 
 
@@ -47,11 +54,12 @@ class Notifications(models.Model):
         ("SYSTEM", "System"),
         ("MESSAGE", "Message"),
     )
-
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="notifications")
     type = models.CharField(max_length=20, choices=Types)
     title = models.CharField(max_length=10, null=True, blank=True)
     message = models.TextField()
+    icons = models.CharField(max_length=100, default="")
     is_read = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
+
 # Create your models here.

@@ -1,3 +1,4 @@
+from django.core.mail import message
 from django.forms.models import model_to_dict
 from django.shortcuts import render
 from django.conf import settings
@@ -12,9 +13,15 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.csrf import csrf_exempt
 from django.db.models import Sum
 from django.core.exceptions import ObjectDoesNotExist
-from .services.cryptocompare import (NOTIFICATION_BANK, CURRENCY_TO_COUNTRY, get_chart_data2)
+from .services.cryptocompare import (NOTIFICATION_BANK, CURRENCY_TO_COUNTRY, get_chart_data2, TRANSACTION_CARD_BANK)
 import random
+from .services.utils import (send_wallet_update, send_notification_update, get_wallet_stats, send_transaction_update)
 
+
+
+
+
+# --------------------- BEGINS ----------------------
 
 @csrf_exempt
 @transaction.atomic
@@ -29,17 +36,35 @@ def deposit(request):
         wallet.save()
 
 
-        Transaction.objects.create(
+        transact = createTransaction(
             user=user,
-            type="DEPOSIT",
+            transactionType="DEPOSIT",
             amount=amount
         )
 
-        create_Notification(
+        transaction_count = Transaction.objects.filter(user=user).count()
+
+        notify = create_Notification(
             user=user,
             notification_type="DEPOSIT",
+            amount=amount,
+        )
+
+        count = Notifications.objects.filter(user=user).count()
+
+        send_wallet_update(
+            user=user,
+            transaction_type="DEPOSIT",
             amount=amount
         )
+
+        send_notification_update(
+            user,
+            notify,
+            count
+        )
+
+        send_transaction_update(user, transact, transaction_count)
 
         return JsonResponse({
             "success": True,
@@ -53,15 +78,15 @@ def deposit(request):
         }, status=400)
 
 
+
 @csrf_exempt
 @transaction.atomic
 def withdraw(request):
     try:
         amount = Decimal(request.POST.get("amount"))
-
         user = User.objects.get(username='fulltime')
-
         wallet = Wallet.objects.get(user=user)
+
 
         if wallet.balance < amount:
             return JsonResponse({
@@ -72,17 +97,36 @@ def withdraw(request):
         wallet.balance -= amount
         wallet.save()
 
-        Transaction.objects.create(
+        transact = createTransaction(
             user=user,
-            type="WITHDRAW",
+            transactionType="WITHDRAW",
             amount=amount
         )
 
-        create_Notification(
+        transaction_count = Transaction.objects.filter(user=user).count()
+
+        notify = create_Notification(
             user=user,
             notification_type="WITHDRAW",
-            amount=amount
+            amount=amount,
         )
+
+        count = Notifications.objects.filter(user=user).count()
+
+        send_wallet_update(
+            user=user,
+            transaction_type="WITHDRAW",
+            amount=amount,
+        )
+
+        send_notification_update(
+            user,
+            notify,
+            count
+        )
+
+        send_transaction_update(user, transact, transaction_count)
+
 
         return JsonResponse({
             "success": True,
@@ -95,6 +139,8 @@ def withdraw(request):
             "success": False,
             "error": str(e)
         }, status=400)
+
+
 
 
 @csrf_exempt
@@ -116,6 +162,7 @@ def sell_coin(request):
                 "success": False,
                 "error": "Quantity must be greater than 0"
             }, status=400)
+
 
         if current_price <= 0:
             return JsonResponse({
@@ -199,9 +246,9 @@ def sell_coin(request):
         # SAVE TRANSACTION
         # ---------------------------
 
-        Transaction.objects.create(
+        transact = createTransaction(
             user=user,
-            type="SELL",
+            transactionType="SELL",
             coin=coin,
             amount=received,
             quantity=quantity,
@@ -210,13 +257,17 @@ def sell_coin(request):
             fee=fee
         )
 
-        create_Notification(
+        transaction_count = Transaction.objects.filter(user=user).count()
+
+        notify = create_Notification(
             user=user,
             notification_type="SELL",
             amount=received,
             quantity=quantity,
             coin=coin
         )
+
+        count = Notifications.objects.filter(user=user).count()
 
         print({
             "coin": coin,
@@ -227,6 +278,18 @@ def sell_coin(request):
             "profit": str(profit),
             "wallet_balance": str(wallet.balance)
         })
+
+        send_wallet_update(
+            user=user,
+            transaction_type="SELL",
+            amount=received,
+            coin=coin,
+            quantity=quantity
+        )
+
+        send_notification_update(user,notify, count)
+
+        send_transaction_update(user, transact, transaction_count)
 
         return JsonResponse({
             "success": True,
@@ -245,7 +308,6 @@ def sell_coin(request):
             "success": False,
             "error": str(e)
         }, status=400)
-
 
 
 @csrf_exempt
@@ -313,9 +375,9 @@ def buy_coin(request):
         wallet.save()
 
         # 🧾 log transaction
-        Transaction.objects.create(
+        transact = createTransaction(
             user=user,
-            type="BUY",
+            transactionType="BUY",
             coin=coin,
             amount=total_cost,   # money spent before fee (or include fee if you want)
             quantity=quantity,
@@ -323,13 +385,28 @@ def buy_coin(request):
             fee=fee
         )
 
-        create_Notification(
+        transaction_count = Transaction.objects.filter(user=user).count()
+
+        notify = create_Notification(
             user=user,
             notification_type="BUY",
             amount=total_cost,
             quantity=quantity,
             coin=coin,
         )
+        count = Notifications.objects.filter(user=user).count()
+
+        send_wallet_update(
+            user=user,
+            transaction_type="BUY",
+            amount=total_cost,
+            coin=coin,
+            quantity=quantity
+        )
+
+        send_notification_update(user, notify, count)
+
+        send_transaction_update(user, transact, transaction_count)
 
         return JsonResponse({
             "success": True,
@@ -352,35 +429,16 @@ def wallet_data(request):
     try:
         user = User.objects.get(username='fulltime')
 
-        wallet, create = Wallet.objects.select_for_update().get_or_create(user=user)
+        data = get_wallet_stats(user)
 
-        expenses = Transaction.objects.filter(
-            user=user,
-            type="BUY"
-        ).aggregate(
-            total=Sum("amount")
-        )["total"] or 0
-
-        income = Transaction.objects.filter(
-            user=user,
-            type="SELL"
-        ).aggregate(
-            total=Sum("profit")
-        )["total"] or 0
-
-        income = max(income, 0)
-
-        data = {
+        return JsonResponse({
             "success": True,
-            "balance": str(wallet.balance),
-            "income": str(income),
-            "expenses": str(expenses),
-        }
-
-        return JsonResponse(data)
+            **data
+        })
 
     except Exception as e:
         return JsonResponse({"success": False, "error": str(e)}, status=500)
+
 
 
 def index(request):
@@ -435,13 +493,8 @@ def chart_data2(request, coin, days):
         }, status=400)
 
 
-
-
-
-
-
-
 def convert_currencies(request):
+    user = User.objects.get(username='fulltime')
     amount = request.GET.get("amount", "1")
     from_Currency = request.GET.get("from_Currency", "USD")
     to_Currency = request.GET.get("to_Currency", "NGN")
@@ -462,6 +515,23 @@ def convert_currencies(request):
         rates = data["rates"].get(to_Currency)
         result = amount * rates
 
+        notify = create_Notification(
+            user=user,
+            notification_type="CURRENCY_CONVERTER",
+            from_amount=amount,
+            from_Currency=from_Currency,
+            to_amount=result,
+            to_Currency=to_Currency,
+        )
+
+        count = Notifications.objects.filter(user=user).count()
+
+        send_notification_update(
+            user,
+            notify,
+            count
+        )
+
 
         return JsonResponse({
             "rates": rates,
@@ -472,9 +542,9 @@ def convert_currencies(request):
         print("ERROR:", str(e))
         return JsonResponse({"error": str(e)}, status=500)
 
+
+
 Exchange_Api_Key = settings.EXCHANGE_RATE_API_KEY
-
-
 def exchangerates(request):
     cache_key = f"exchangerates"
     cache_data = cache.get(cache_key)
@@ -503,6 +573,8 @@ def exchangerates(request):
 
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
+
+
 
 def Trending(request):
     cache_key = f"trending"
@@ -544,6 +616,7 @@ def Popular(request):
         return JsonResponse({"error": str(e)}, status=500)
 
 
+
 def create_Notification(user, notification_type, **kwargs):
     template = NOTIFICATION_BANK[notification_type]
 
@@ -553,25 +626,25 @@ def create_Notification(user, notification_type, **kwargs):
         template["messages"]
     ).format(**kwargs)
 
-    Notifications.objects.create(
+    icons = random.choice(template["icons"])
+
+
+    notify = Notifications.objects.create(
         user=user,
         type=notification_type,
         title=title,
-        message=message
+        message=message,
+        icons=icons,
     )
+
+
+    return notify
 
 
 
 def notification(request):
     try:
         user = User.objects.get(username='fulltime')
-
-        cache_key = f"notifications_{user.id}"
-        cache_data = cache.get(cache_key)
-
-        if cache_data:
-            return JsonResponse(cache_data, safe=False)
-
 
         notifications = (
             Notifications.objects.filter(user=user).order_by("-created_at")
@@ -581,16 +654,15 @@ def notification(request):
         data = [
             {
                 "id": n.id,
-                "type": n.type,
+                "notification_type": n.type,
                 "title": n.title,
                 "message": n.message,
                 "is_read": n.is_read,
+                "icons": n.icons,
                 "created_at": n.created_at.isoformat()
             }
             for n in notifications
         ]
-
-        cache.set(cache_key, data, timeout=300)
 
         return JsonResponse(data, safe=False)
 
@@ -599,6 +671,99 @@ def notification(request):
 
 
 
+
+def notification_count(request):
+    user = User.objects.get(username='fulltime')
+    count = Notifications.objects.filter(user=user).count()
+
+    return JsonResponse({
+        "count": count
+    })
+
+def transaction_counter(request):
+    user = User.objects.get(username='fulltime')
+    count = Transaction.objects.filter(user=user).count()
+
+    return JsonResponse({
+        "count": count
+    })
+
+
+import random
+
+def createTransaction(user, transactionType, **kwargs):
+
+    template = TRANSACTION_CARD_BANK[transactionType]
+
+    transact = Transaction.objects.create(
+        user=user,
+        type=transactionType,
+
+        icon=random.choice(template["icons"]),
+        title=random.choice(template["titles"]),
+        message=random.choice(template["messages"]).format(**kwargs),
+        status=random.choice(template["status"]),
+
+        **kwargs
+    )
+
+    return transact
+
+
+
+def AllTransactions(request):
+    try:
+        user = User.objects.get(username="fulltime")
+
+        transactions = (
+            Transaction.objects
+            .filter(user=user)
+            .order_by("-created_at")
+        )
+
+        data = []
+
+        for transaction in transactions:
+
+            template = TRANSACTION_CARD_BANK[transaction.type]
+
+            data.append({
+                "id": transaction.id,
+
+                "type": transaction.type,
+
+                "icon": transaction.icon,
+
+                "title": transaction.title,
+
+                "message": transaction.message,
+
+                "status": transaction.status,
+
+                "coin": (
+                    transaction.coin
+                    if transaction.coin else ""
+                ),
+
+
+                "quantity": str(transaction.quantity if transaction.quantity else ""),
+
+                "price_per_coin": str(transaction.price_per_coin if transaction.price_per_coin else ""),
+
+                "amount": str(transaction.amount),
+
+                "fee": str(transaction.fee if transaction.fee else ""),
+
+                "created_at": transaction.created_at,
+            })
+
+        return JsonResponse(data, safe=False)
+
+    except Exception as e:
+        return JsonResponse(
+            {"error": str(e)},
+            status=500
+        )
 
 
 

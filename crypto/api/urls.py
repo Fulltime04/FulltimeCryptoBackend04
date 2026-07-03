@@ -1,3 +1,4 @@
+from cryptography.x509 import name
 from django.urls import path
 from . import views
 
@@ -5,7 +6,9 @@ from . import views
 urlpatterns = [
     path('wallet_data/', views.wallet_data, name='wallet_data'),
     path('notification/', views.notification, name='notification'),
-    
+    path('notification_count/', views.notification_count, name='notification_count'),
+    path('transactions/', views.AllTransactions, name="All_Transactions"),
+    path('transaction_counter/', views.transaction_counter, name='transaction_counter'),
 
     path('list/', views.index, name='index'),
     path('exchange/', views.exchangerates, name='exchangerates'),
