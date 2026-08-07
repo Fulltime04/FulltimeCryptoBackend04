@@ -20,6 +20,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 CRYPTOCOMPARE_API_KEY = os.environ.get('crypto_compare_api_key')
 EXCHANGE_RATE_API_KEY = os.environ.get('exchange')
+COIN_MARKET_API_KEY = os.environ.get('coin_market_cap_api_key')
+MARKET_UPDATE_INTERVAL = int(
+    os.environ.get('market_update_interval', 60)
+)
 #
 
 # Quick-start development settings - unsuitable for production
@@ -50,11 +54,10 @@ INSTALLED_APPS = [
     'channels',
     'corsheaders',
     'api',
-
-
 ]
 
 ASGI_APPLICATION = "crypto.asgi.application"
+
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
@@ -107,6 +110,11 @@ DATABASES = {
     }
 }
 
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+    }
+}
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators

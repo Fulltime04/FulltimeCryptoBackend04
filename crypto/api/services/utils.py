@@ -2,10 +2,14 @@ from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from django.db import transaction
 from django.db.models import Sum
+from django.conf import settings
 import random
+import time
 from ..models import Wallet, Transaction,Notifications
 from ..services.cryptocompare import (NOTIFICATION_BANK, CURRENCY_TO_COUNTRY, get_chart_data2, TRANSACTION_CARD_BANK)
+from django.utils import timezone
 
+# from ...crypto import settings
 
 
 def send_ws_update(group_name, data, **extra):
@@ -13,7 +17,7 @@ def send_ws_update(group_name, data, **extra):
     print("=" * 50)
     print("SENDING WEBSOCKET UPDATE")
     print("GROUP:", group_name)
-    print("DATA:", data)
+    # print("DATA:", data)
     print("=" * 50)
 
     channel_layer = get_channel_layer()
@@ -23,14 +27,15 @@ def send_ws_update(group_name, data, **extra):
         {
             "type": "send_update",
             "data": data,
+            "timestamp": timezone.now().timestamp(),
             **extra
         },
 
     )
 
 
-def get_wallet_stats(user):
 
+def get_wallet_stats(user):
     wallet, _ = Wallet.objects.get_or_create(
         user=user
     )
@@ -77,13 +82,14 @@ def send_wallet_update(
 
     transaction.on_commit(
         lambda: send_ws_update(
-            "wallet_test",
+            "wallet_group",
             {
                 "type": "wallet_update",
                 "transaction_type": transaction_type,
                 "amount": str(amount),
                  **stats
-            }
+            },
+            event="wallet_update"   
         )
     )
 
@@ -99,7 +105,7 @@ def send_notification_update(user, notification,count):
     print("NOTIFICATION COUNT:", count)
 
     send_ws_update(
-        "wallet_test",
+        "wallet_group",
         {
             "type": "notification",
             "notification": {
@@ -110,6 +116,7 @@ def send_notification_update(user, notification,count):
                 "icons": notification.icons,
             },
         },
+        event="notification_update",
         notification_count=count,
     )
 
@@ -124,15 +131,14 @@ def send_transaction_update(user, transaction, count):
     print("TRANSACTION COUNT:", count)
 
     send_ws_update(
-        "wallet_test",
+        "wallet_group",
         {
             "type": "transaction",
             "transaction": transaction_to_dict(transaction)
         },
-        transaction_count=count
+       event="transaction_update",
+       transaction_count=count
     )
-
-
 
 
 def transaction_to_dict(transaction):
@@ -152,6 +158,14 @@ def transaction_to_dict(transaction):
         "price_per_coin": str(transaction.price_per_coin),
         "profit": str(transaction.profit),
         "fee": str(transaction.fee),
-
+        "Coin_quantity_balance": str(transaction.Coin_quantity_balance),
         "createdAt": transaction.created_at.isoformat(),
     }
+
+
+
+
+
+
+
+

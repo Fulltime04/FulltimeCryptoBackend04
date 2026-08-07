@@ -5,7 +5,6 @@ from django.conf import settings
 from django.core.cache import cache
 from django.http import JsonResponse
 
-
 API_KEY = settings.CRYPTOCOMPARE_API_KEY
 
 
@@ -92,6 +91,20 @@ NOTIFICATION_BANK = {
             "Your currency conversion has been completed at the current market rate."
         ],
         "icons": ["💱", "🔄", "🌍", "💹"],
+    },
+
+    "Coin_Exchange": {
+    "title": "Exchange Successful",
+    "messages": [
+        "Successfully exchanged {amount} {from_coin_id} for {result_Amount} {to_coin_id}.",
+        "Your crypto swap has been completed. You received {result_Amount} {to_coin_id} in exchange for {amount} {from_coin_id}.",
+        "Exchange completed! {amount} {from_coin_id} has been converted to {result_Amount} {to_coin_id}.",
+        "Trade executed successfully at the current market rate.",
+        "Your assets have been swapped successfully. New balance updated.",
+        "{result_Amount} {to_coin_id} has been credited to your wallet after exchanging {amount} {from_coin_id}.",
+        "Coin exchange completed successfully. Thank you for trading with us!"
+    ],
+    "icons": ["💱", "🔄", "🪙", "📈", "✅", "🚀", "💹"],
     },
 
     "ALERT": {
@@ -579,3 +592,136 @@ TRANSACTION_CARD_BANK = {
     }
 
 }
+
+
+
+marketCapApiKey = settings.COIN_MARKET_API_KEY
+
+def get_coin_marketCap(page):
+    url = "https://pro-api.coinmarketcap.com/v1/cryptocurrency/listings/latest"
+    limit = 250
+    start = (page - 1) * limit
+
+    headers = {
+        "X-CMC_PRO_API_KEY": marketCapApiKey
+    }
+
+    params = {
+        "convert": "USD",
+        "start": start,
+        "limit": limit,
+    }
+
+    response = requests.get(url, headers=headers, params=params, timeout=10)
+    response.raise_for_status()
+
+    return response.json()["data"]
+
+
+def get_cryptoCompare_coin(page):
+
+    url = "https://min-api.cryptocompare.com/data/all/coinlist"
+    response = requests.get(url, timeout=10)
+    response.raise_for_status()
+
+    coins = list(response.json()["Data"].values())
+    limit = 250
+    start = (page - 1) * limit
+    end = start + limit
+
+    return coins[start:end]
+
+
+
+
+import time
+import requests
+
+# def get_coin_gecko(page=1):
+#
+#     url = "https://api.coingecko.com/api/v3/coins/markets"
+#
+#     params = {
+#         "vs_currency": "usd",
+#         "per_page": 250,
+#         "page": page,
+#         "sparkline": "true",
+#         "price_change_percentage": "24h,7d"
+#     }
+#
+#     for attempt in range(3):
+#
+#         try:
+#
+#             response = requests.get(
+#                 url,
+#                 params=params,
+#                 timeout=20
+#             )
+#
+#             response.raise_for_status()
+#
+#             return response.json()
+#
+#         except requests.exceptions.RequestException as e:
+#
+#             print(f"Attempt {attempt + 1} failed:", e)
+#
+#             time.sleep(2)
+#
+#     return []
+
+
+
+
+
+def get_trending_coins():
+    url = "https://api.coingecko.com/api/v3/search/trending"
+
+    response = requests.get(url, timeout=10)
+    response.raise_for_status()
+
+    data = response.json()["coins"]
+
+    result = []
+
+    for x in data:
+        result.append(x["item"])
+
+    return result
+
+
+
+
+def get_trending():
+
+    providers = [
+
+        ("CoinGecko", get_trending_coins),
+
+        # Future providers
+
+    ]
+
+    for name, provider in providers:
+
+        try:
+
+            print(f"Using {name}")
+
+            return provider()
+
+        except Exception as e:
+
+            print(e)
+
+    return []
+
+
+
+
+
+
+
+
+

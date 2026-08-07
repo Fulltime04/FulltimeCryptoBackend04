@@ -21,6 +21,7 @@ class Transaction(models.Model):
     coin = models.CharField(max_length=10, null=True, blank=True)
 
     quantity = models.DecimalField(max_digits=20, decimal_places=8, default=0)
+    Coin_quantity_balance = models.DecimalField(max_digits=20, decimal_places=8, default=0)
     price_per_coin = models.DecimalField(max_digits=20, decimal_places=2, default=0)
     profit = models.DecimalField(max_digits=20, decimal_places=2, default=0)
     fee = models.DecimalField(max_digits=20, decimal_places=2, default=0)

@@ -13,14 +13,15 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.csrf import csrf_exempt
 from django.db.models import Sum
 from django.core.exceptions import ObjectDoesNotExist
-from .services.cryptocompare import (NOTIFICATION_BANK, CURRENCY_TO_COUNTRY, get_chart_data2, TRANSACTION_CARD_BANK)
+from .services.cryptocompare import (NOTIFICATION_BANK, CURRENCY_TO_COUNTRY, get_chart_data2, TRANSACTION_CARD_BANK, get_trending_coins)
 import random
 from .services.utils import (send_wallet_update, send_notification_update, get_wallet_stats, send_transaction_update)
 
 
 
+marketCapApiKey = settings.COIN_MARKET_API_KEY
 
-
+print(marketCapApiKey)
 # --------------------- BEGINS ----------------------
 
 @csrf_exempt
@@ -254,7 +255,8 @@ def sell_coin(request):
             quantity=quantity,
             price_per_coin=current_price,
             profit=profit,
-            fee=fee
+            fee=fee,
+            Coin_quantity_balance=remaining_quantity
         )
 
         transaction_count = Transaction.objects.filter(user=user).count()
@@ -300,7 +302,8 @@ def sell_coin(request):
             "received": str(received),
             "profit": str(profit),
             "fee": str(fee),
-            "avg_buy_price": str(avg_buy_price)
+            "avg_buy_price": str(avg_buy_price),
+            "Coin_quantity_balance": str(transact.Coin_quantity_balance),
         })
 
     except Exception as e:
@@ -382,7 +385,8 @@ def buy_coin(request):
             amount=total_cost,   # money spent before fee (or include fee if you want)
             quantity=quantity,
             price_per_coin=current_price,
-            fee=fee
+            fee=fee,
+            Coin_quantity_balance=new_total_qty,
         )
 
         transaction_count = Transaction.objects.filter(user=user).count()
@@ -408,13 +412,16 @@ def buy_coin(request):
 
         send_transaction_update(user, transact, transaction_count)
 
+        print("coin_balance:", transact.Coin_quantity_balance)
+
         return JsonResponse({
             "success": True,
             "balance": str(wallet.balance),
             "quantity": str(holding.quantity),
             "average_buy_price": str(holding.average_buy_price),
             "fee": str(fee),
-            "cost": str(total_cost_with_fee)
+            "cost": str(total_cost_with_fee),
+            "Coin_quantity_balance": str(transact.Coin_quantity_balance),
         })
 
     except Exception as e:
@@ -748,6 +755,8 @@ def AllTransactions(request):
 
                 "quantity": str(transaction.quantity if transaction.quantity else ""),
 
+                "Coin_quantity_balance": str(transaction.Coin_quantity_balance if transaction.quantity else ""),
+
                 "price_per_coin": str(transaction.price_per_coin if transaction.price_per_coin else ""),
 
                 "amount": str(transaction.amount),
@@ -764,6 +773,132 @@ def AllTransactions(request):
             {"error": str(e)},
             status=500
         )
+
+
+def coinMarketCaps(request):
+    cache_key = "coinMarketCaps"
+    cache_data = cache.get(cache_key)
+
+    if cache_data:
+        return JsonResponse(cache_data, safe=False)
+
+    try:
+        url = "https://pro-api.coinmarketcap.com/v1/cryptocurrency/listings/latest"
+        headers = {
+            "X-CMC_PRO_API_KEY": marketCapApiKey
+        }
+        params = {
+            "limit": 1000,
+        }
+
+        response = requests.get(url, params=params, headers=headers)
+        data = response.json()
+        myData = data["data"]
+
+        return JsonResponse(myData, safe=False)
+
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+def coinConversion(request):
+    amount = request.GET.get("amount")
+    from_coin_id = request.GET.get("fromCoinId")
+    to_coin_id = request.GET.get("toCoinId")
+    user = User.objects.get(username='fulltime')
+
+    fromName = request.GET.get("fromName")
+    toName = request.GET.get("toName")
+
+    try:
+        url = "https://pro-api.coinmarketcap.com/v2/tools/price-conversion"
+
+        headers = {
+            "X-CMC_PRO_API_KEY": marketCapApiKey
+        }
+
+        params = {
+            "amount": amount,
+            "id": from_coin_id,
+            "convert_id": to_coin_id,
+        }
+
+
+        response = requests.get(url, params=params, headers=headers)
+        data = response.json()
+
+        result_Amount = data["data"]["quote"][to_coin_id]["price"]
+        print(result_Amount)
+
+        notify = create_Notification(
+            user=user,
+            notification_type="Coin_Exchange",
+            amount=amount,
+            from_coin_id=fromName,
+            result_Amount=result_Amount,
+            to_coin_id=toName,
+        )
+
+        count = Notifications.objects.filter(user=user).count()
+
+        send_notification_update(
+            user,
+            notify,
+            count
+        )
+
+        return JsonResponse(data, safe=False)
+
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+from django.core.cache import cache
+
+def all_coins(request):
+
+    page = int(request.GET.get("page", 1))
+
+    data = cache.get(f"market_page_{page}")
+
+
+    if data is None:
+        return JsonResponse(
+            {
+                "error": "Market data not ready."
+            },
+            status=503
+        )
+
+    return JsonResponse(
+        data,
+        safe=False
+    )
+
+
+
+
+
+def list_Trending(request):
+
+    cache_key = "trending_coins"
+
+    cached = cache.get(cache_key)
+
+    if cached:
+
+        return JsonResponse(cached, safe=False)
+
+    data = get_trending_coins()
+
+    cache.set(cache_key, data, timeout=300)
+
+    return JsonResponse(data, safe=False)
+
+
+
+
+
 
 
 

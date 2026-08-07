@@ -9,6 +9,10 @@ urlpatterns = [
     path('notification_count/', views.notification_count, name='notification_count'),
     path('transactions/', views.AllTransactions, name="All_Transactions"),
     path('transaction_counter/', views.transaction_counter, name='transaction_counter'),
+    path('coinConversion/', views.coinConversion, name='coinConversion'),
+    path('coinMarketCaps/', views.coinMarketCaps, name='coinMarketCaps'),
+    path('all_Coins/', views.all_coins, name='all_coins'),
+    path("list_Trending/", views.list_Trending, name='list_Trending'),
 
     path('list/', views.index, name='index'),
     path('exchange/', views.exchangerates, name='exchangerates'),
