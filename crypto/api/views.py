@@ -15,9 +15,11 @@ from django.db.models import Sum
 from django.core.exceptions import ObjectDoesNotExist
 from .services.cryptocompare import (NOTIFICATION_BANK, CURRENCY_TO_COUNTRY, get_chart_data2, TRANSACTION_CARD_BANK, get_trending_coins)
 import random
+import time
+from .services.market import fetcher
 from .services.utils import (send_wallet_update, send_notification_update, get_wallet_stats, send_transaction_update)
 
-
+from .services.market.fetcher import MarketFetcher
 
 marketCapApiKey = settings.COIN_MARKET_API_KEY
 
@@ -853,26 +855,155 @@ def coinConversion(request):
         return JsonResponse({"error": str(e)}, status=500)
 
 
+
 from django.core.cache import cache
+from .services.market.constants import (DEFAULT_PER_PAGE, CACHE_LOCK_WAIT, ACTIVE_MARKET_PAGE_KEY)
+from .services.market.cache import MarketCache
+
 
 def all_coins(request):
 
-    page = int(request.GET.get("page", 1))
+    page = int(
+        request.GET.get(
+            "page",
+            1,
+        )
+    )
 
-    data = cache.get(f"market_page_{page}")
 
+    cache.set(
+        ACTIVE_MARKET_PAGE_KEY,
+        page,
+        None
+    )
+    market_cache = MarketCache()
 
-    if data is None:
+    # =========================================================
+    # CACHE HIT
+    # =========================================================
+
+    data = cache.get(
+        f"market_page_{page}"
+    )
+
+    if data:
+
         return JsonResponse(
-            {
-                "error": "Market data not ready."
-            },
-            status=503
+            data,
+            safe=False,
         )
 
+    # =========================================================
+    # PAGE 1
+    # =========================================================
+
+    # =========================================================
+    # TRY TO ACQUIRE LOCK
+    # =========================================================
+
+    lock_acquired = (
+        market_cache.acquire_lock(
+            page
+        )
+    )
+
+    # =========================================================
+    # WE GOT THE LOCK
+    # =========================================================
+
+    if lock_acquired:
+
+        try:
+
+            # Check cache AGAIN.
+            #
+            # Another request might have populated it
+            # just before we acquired the lock.
+
+            data = market_cache.load(
+                page
+            )
+
+            if data:
+
+                return JsonResponse(
+                    data,
+                    safe=False,
+                )
+
+            # -------------------------------------------------
+            # FETCH FROM COINGECKO
+            # -------------------------------------------------
+
+            fetcher = MarketFetcher()
+
+            data = fetcher.get_market_page(
+                page=page,
+                per_page=DEFAULT_PER_PAGE,
+            )
+
+            if data is None:
+
+                return JsonResponse(
+                    {
+                        "error": (
+                            "Unable to fetch "
+                            "market data."
+                        ),
+                        "page": page,
+                    },
+                    status=503,
+                )
+
+            # -------------------------------------------------
+            # SAVE
+            # -------------------------------------------------
+
+            market_cache.save(
+                page,
+                data,
+            )
+
+            return JsonResponse(
+                data,
+                safe=False,
+            )
+
+        finally:
+
+            market_cache.release_lock(
+                page
+            )
+
+    # =========================================================
+    # SOMEONE ELSE IS FETCHING
+    # =========================================================
+    waited = 0
+
+    while waited < 30:
+
+        data = market_cache.load(
+            page
+        )
+
+        if data:
+            return JsonResponse(
+                data,
+                safe=False,
+            )
+
+        time.sleep(
+            CACHE_LOCK_WAIT
+        )
+
+        waited += CACHE_LOCK_WAIT
+
     return JsonResponse(
-        data,
-        safe=False
+        {
+            "error": "Market data is currently being fetched.",
+            "page": page,
+        },
+        status=503,
     )
 
 
@@ -898,6 +1029,57 @@ def list_Trending(request):
 
 
 
+
+def search_coins(request):
+
+    query = request.GET.get(
+        "q",
+        ""
+    ).strip()
+
+    if not query:
+
+        return JsonResponse({
+            "coins": []
+        })
+
+    fetcher = MarketFetcher()
+
+    # ----------------------------------------
+    # Find coins matching the search text
+    # ----------------------------------------
+
+    search_results = fetcher.search_coins(
+        query
+    )
+
+    if not search_results:
+
+        return JsonResponse({
+            "coins": []
+        })
+
+    # ----------------------------------------
+    # Get CoinGecko IDs
+    # ----------------------------------------
+
+    coin_ids = [
+        coin["id"]
+        for coin in search_results[:10]
+        if coin.get("id")
+    ]
+
+    # ----------------------------------------
+    # Get full market information
+    # ----------------------------------------
+
+    market_coins = fetcher.fetch_coins_by_ids(
+        coin_ids
+    )
+
+    return JsonResponse({
+        "coins": market_coins
+    })
 
 
 

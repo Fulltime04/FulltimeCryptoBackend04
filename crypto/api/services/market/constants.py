@@ -1,13 +1,1 @@
-# CoinGecko
-COINGECKO_URL = "https://api.coingecko.com/api/v3/coins/markets?sparkline=true"
-
-# Request
-DEFAULT_PAGE = 1
-DEFAULT_PER_PAGE = 250
-REQUEST_TIMEOUT = 5
-MAX_RETRIES = 3
-RETRY_DELAY = 2
-
-# Cache
-MARKET_CACHE_KEY = "market_page_1"
-CACHE_TIMEOUT = 300
+# CoinGeckoCOINGECKO_URL = "https://api.coingecko.com/api/v3/coins/markets?sparkline=true"# RequestDEFAULT_PAGE = 1DEFAULT_PER_PAGE = 250REQUEST_TIMEOUT = 15MAX_RETRIES = 2RETRY_DELAY = 2CACHE_TIMEOUT = 300PAGINATED_CACHE_TIMEOUT = 1800# Cache lockCACHE_LOCK_TIMEOUT = 30CACHE_LOCK_WAIT = 0.2ACTIVE_MARKET_PAGE_KEY = "active_market_page"

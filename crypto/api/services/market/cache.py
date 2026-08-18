@@ -1,8 +1,9 @@
 from django.core.cache import cache
 
 from .constants import (
-    MARKET_CACHE_KEY,
     CACHE_TIMEOUT,
+    PAGINATED_CACHE_TIMEOUT,
+    CACHE_LOCK_TIMEOUT
 )
 
 
@@ -10,24 +11,49 @@ class MarketCache:
 
     def save(
         self,
-        market,
+        page,
+        data,
+        timeout=None,
     ):
 
+        if timeout is None:
+            timeout = (
+                CACHE_TIMEOUT
+                if page == 1 else PAGINATED_CACHE_TIMEOUT
+            )
+
         cache.set(
-            MARKET_CACHE_KEY,
-            market,
-            CACHE_TIMEOUT,
+            f'market_page_{page}',
+            data,
+            timeout,
         )
 
-    def load(self):
+
+    def load(self,page):
 
         return cache.get(
-            MARKET_CACHE_KEY,
+            f'market_page_{page}',
             [],
         )
 
-    def clear(self):
+
+    def clear(self,page):
 
         cache.delete(
-            MARKET_CACHE_KEY,
+            f'market_page_{page}',
+        )
+
+    def acquire_lock(self, page):
+
+        return cache.add(
+            f'market_page_lock_{page}',
+            True,
+            CACHE_LOCK_TIMEOUT,
+
+        )
+
+    def release_lock(self, page):
+
+        cache.delete(
+            f"market_page_lock_{page}",
         )

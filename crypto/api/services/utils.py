@@ -17,7 +17,7 @@ def send_ws_update(group_name, data, **extra):
     print("=" * 50)
     print("SENDING WEBSOCKET UPDATE")
     print("GROUP:", group_name)
-    # print("DATA:", data)
+    print("DATA:", data)
     print("=" * 50)
 
     channel_layer = get_channel_layer()
