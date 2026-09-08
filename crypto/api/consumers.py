@@ -13,6 +13,8 @@ class CryptoConsumer(AsyncWebsocketConsumer):
             self.scope["query_string"].decode()
         )
 
+        print(query)
+
         group = query.get("group", ["wallet"])[0]
 
         print("Query: ", query)

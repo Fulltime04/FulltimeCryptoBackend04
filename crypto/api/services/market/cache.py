@@ -49,7 +49,6 @@ class MarketCache:
             f'market_page_lock_{page}',
             True,
             CACHE_LOCK_TIMEOUT,
-
         )
 
     def release_lock(self, page):

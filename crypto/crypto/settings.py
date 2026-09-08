@@ -10,7 +10,6 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 from pathlib import Path
-from django.conf.global_settings import CSRF_TRUSTED_ORIGINS
 from dotenv import load_dotenv
 import os
 
@@ -18,12 +17,22 @@ import os
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 load_dotenv(BASE_DIR / ".env")
+
 CRYPTOCOMPARE_API_KEY = os.environ.get('crypto_compare_api_key')
+
 EXCHANGE_RATE_API_KEY = os.environ.get('exchange')
+
 COIN_MARKET_API_KEY = os.environ.get('coin_market_cap_api_key')
+
 MARKET_UPDATE_INTERVAL = int(
     os.environ.get('market_update_interval', 60)
 )
+
+NEWS_API_KEY = os.environ.get('coingecko_api_key')
+
+
+CRYPTO_PANIC_KEY = os.environ.get('crypto_panic_key')
+
 #
 
 # Quick-start development settings - unsuitable for production

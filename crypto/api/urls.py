@@ -1,4 +1,3 @@
-from cryptography.x509 import name
 from django.urls import path
 from . import views
 
@@ -28,4 +27,7 @@ urlpatterns = [
     path("sell/", views.sell_coin),
     path("withdraw/", views.withdraw),
     path("buy/", views.buy_coin),
+
+
+    path("news_list/", views.fetch_latest_news, name="fetch_latest_news")
 ]

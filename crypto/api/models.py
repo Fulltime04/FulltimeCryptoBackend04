@@ -63,4 +63,29 @@ class Notifications(models.Model):
     is_read = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
+
+
+
+# class NewsArticle(models.Model):
+#     title = models.CharField(max_length=500)
+#     description = models.TextField(blank=True)
+#     author = models.TextField(max_length=200)
+#     source = models.TextField(max_length=200, blank=True)
+#
+#     url = models.URLField(unique=True)
+#     image_url = models.URLField(blank=True)
+#
+#     published_at = models.DateTimeField()
+#     fetched_at = models.DateTimeField(auto_now_add=True)
+#
+#     category = models.CharField(
+#         max_length=50,
+#         default="crypto",
+#     )
+#
+#     popularity_Score = models.FloatField(default=0)
+#
+#     class Meta:
+#         ordering = ["published_at"]
+
 # Create your models here.

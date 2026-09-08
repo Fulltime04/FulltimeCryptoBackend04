@@ -632,11 +632,6 @@ def get_cryptoCompare_coin(page):
     return coins[start:end]
 
 
-
-
-import time
-import requests
-
 # def get_coin_gecko(page=1):
 #
 #     url = "https://api.coingecko.com/api/v3/coins/markets"

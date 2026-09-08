@@ -14,13 +14,21 @@ class ApiConfig(AppConfig):
         try:
 
             from .services.market.Updater import MarketUpdater
+            # from .services.newsUpdater import NewsUpdater
 
-            print("Imported Successfully")
+            print("Markets_Updater Imported Successfully")
+            print("NewsUpdater Imported Successfully")
 
-            updater = MarketUpdater()
+            markets_updater = MarketUpdater()
+            # news_updater = NewsUpdater()
+            #
+            # threading.Thread(
+            #     target=news_updater.run,
+            #     daemon=True
+            # ).start()
 
             threading.Thread(
-                target=updater.run,
+                target=markets_updater.run,
                 daemon=True
             ).start()
 

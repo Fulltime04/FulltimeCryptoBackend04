@@ -19,7 +19,11 @@ import time
 from .services.market import fetcher
 from .services.utils import (send_wallet_update, send_notification_update, get_wallet_stats, send_transaction_update)
 
-from .services.market.fetcher import MarketFetcher
+from .services.market.fetcher import (MarketFetcher)
+
+from .services.news_service import _fetch_crypto_news
+
+
 
 marketCapApiKey = settings.COIN_MARKET_API_KEY
 
@@ -1030,6 +1034,9 @@ def list_Trending(request):
 
 
 
+from django.http import JsonResponse
+
+
 def search_coins(request):
 
     query = request.GET.get(
@@ -1040,22 +1047,35 @@ def search_coins(request):
     if not query:
 
         return JsonResponse({
+            "success": True,
             "coins": []
         })
 
     fetcher = MarketFetcher()
 
     # ----------------------------------------
-    # Find coins matching the search text
+    # Find coins matching search text
     # ----------------------------------------
 
-    search_results = fetcher.search_coins(
-        query
-    )
+    search_results = fetcher.search_coins(query)
+
+    # IMPORTANT:
+    # None = request failed
+    # []   = request succeeded but no results
+
+    if search_results is None:
+
+        return JsonResponse({
+            "success": False,
+            "error": "Unable to search coins right now.",
+            "code": "SEARCH_FAILED"
+        }, status=503)
+
 
     if not search_results:
 
         return JsonResponse({
+            "success": True,
             "coins": []
         })
 
@@ -1069,6 +1089,13 @@ def search_coins(request):
         if coin.get("id")
     ]
 
+    if not coin_ids:
+
+        return JsonResponse({
+            "success": True,
+            "coins": []
+        })
+
     # ----------------------------------------
     # Get full market information
     # ----------------------------------------
@@ -1077,9 +1104,38 @@ def search_coins(request):
         coin_ids
     )
 
+    # IMPORTANT:
+    # None = CoinGecko request failed
+    # []   = successful request but no market data
+
+    if market_coins is None:
+
+        return JsonResponse({
+            "success": False,
+            "error": "Coin market data is temporarily unavailable.",
+            "code": "MARKET_UNAVAILABLE"
+        }, status=503)
+
+    # ----------------------------------------
+    # Success
+    # ----------------------------------------
+
     return JsonResponse({
+        "success": True,
         "coins": market_coins
     })
+
+
+
+
+def fetch_latest_news(request):
+
+    categories = request.GET.get("categories", "BTC,ETH,SOL,XRP")
+
+    data = _fetch_crypto_news(categories=categories)
+
+    return JsonResponse(data, safe=False)
+
 
 
 
