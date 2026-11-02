@@ -29,5 +29,16 @@ urlpatterns = [
     path("buy/", views.buy_coin),
 
 
-    path("news_list/", views.fetch_latest_news, name="fetch_latest_news")
+    path("news_list/", views.fetch_latest_news, name="fetch_latest_news"),
+
+    path("market_brief/", views.market_brief, name="market_brief"),
+    path("market_insights/", views.get_markets_insights, name="get_markets_insights"),
+    path("markets_cap_trend/", views.Market_Cap_Trend, name="get_market_cap_trend"),
+    path("fear_greed/", views.fear_greed_view, name="fear_greed_view"),
+    path("volume_price_correlation/", views.volume_price_correlation, name="volume_price_correlation"),
+
+    path("news/", views.get_news_by_section, name="get_news_by_section"),
+    path("snap_shot/", views.get_market_snapshot, name="SnapShot"),
+
+    path("check_authentication/", views.check_if_authenticated, name="check_authentication"),
 ]

@@ -209,3 +209,86 @@ class MarketFetcher:
             page=page,
             per_page=per_page
         )
+
+
+
+class MarketSnapshotFetcher:
+
+    def __init__(self):
+        self.url = (
+            "https://api.coingecko.com/api/v3/coins/markets"
+        )
+
+    def get_market_snapshot(self):
+
+        params = {
+            "vs_currency": "usd",
+            "order": "market_cap_desc",
+            "per_page": 15,
+            "page": 1,
+            "price_change_percentage": "24h",
+        }
+
+        for attempt in range(1, 4):
+
+            try:
+
+                print(
+                    f"Fetching snapshot "
+                    f"(Attempt {attempt}/3)"
+                )
+
+                response = requests.get(
+                    self.url,
+                    params=params,
+                    timeout=15
+                )
+
+                response.raise_for_status()
+
+                coins = response.json()
+
+                print(
+                    f"Snapshot fetched: "
+                    f"{len(coins)} coins"
+                )
+
+                return [
+                    {
+                        "id": coin["id"],
+                        "symbol": coin["symbol"].upper(),
+                        "name": coin["name"],
+                        "image": coin["image"],
+                        "price": coin["current_price"],
+                        "change_24h": coin.get(
+                            "price_change_percentage_24h"
+                        ),
+                        "market_cap": coin["market_cap"],
+                        "volume_24h": coin["total_volume"],
+                    }
+                    for coin in coins
+                ]
+
+            except requests.exceptions.SSLError as e:
+
+                print(
+                    f"SSL error on attempt "
+                    f"{attempt}: {e}"
+                )
+
+            except requests.exceptions.RequestException as e:
+
+                print(
+                    f"Request error on attempt "
+                    f"{attempt}: {e}"
+                )
+
+            if attempt < 3:
+                time.sleep(3)
+
+        print(
+            "Snapshot request failed after "
+            "3 attempts."
+        )
+
+        return []

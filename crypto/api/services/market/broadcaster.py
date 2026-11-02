@@ -5,6 +5,8 @@ from ..utils import send_ws_update
 logger = logging.getLogger(__name__)
 import json
 
+from channels.layers import get_channel_layer
+
 
 class MarketBroadcaster:
 
@@ -29,3 +31,36 @@ class MarketBroadcaster:
             data=changed_coins,
             event="market_update",
         )
+
+
+class SnapShotBroadcaster:
+    def __init__(self, channel_layer):
+        self.channel_layer = channel_layer
+
+
+    async def broadcast(self, coins):
+
+        if not coins:
+            return
+
+        payload = json.dumps(coins)
+
+        logger.info(
+            "Broadcasting %s snapshot coins | Payload size: %s bytes",
+            len(coins),
+            len(payload),
+        )
+
+        await self.channel_layer.group_send(
+            "snapshot_group",
+            {
+                "type": "snapshot_update",
+                "data": coins,
+            }
+        )
+
+        print("=" * 50)
+        print("SENDING WEBSOCKET UPDATE")
+        print("GROUP:", "snapshot_group")
+        print("DATA:", coins)
+        print("=" * 50)

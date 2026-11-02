@@ -1,27 +1,33 @@
-# import time
-#
-# from .news_service import update_news
-#
-#
-# class NewsUpdater:
-#
-#     def __init__(self):
-#         self.interval = 60 * 15  # 15 minutes
-#
-#     def run(self):
-#
-#         print("News updater started")
-#
-#         while True:
-#
-#             try:
-#                 print("Updating news...")
-#
-#                 update_news()
-#
-#                 print("News updated successfully")
-#
-#             except Exception as e:
-#                 print("News updater error:", e)
-#
-#             time.sleep(self.interval)
+import time
+
+from .news_service import save_all_news
+
+
+class NewsUpdater:
+
+    def __init__(self, interval=60 * 60 * 16):
+        self.interval = interval
+
+    def run(self):
+
+        print("NewsUpdater started")
+
+        while True:
+
+            try:
+                print("Fetching crypto news...")
+
+                count = save_all_news()
+
+                print(
+                    f"News update complete. "
+                    f"Saved/updated: {count}"
+                )
+
+            except Exception as e:
+
+                print(f"NewsUpdater error: {e}")
+
+            print("Next news update in 8 hours...")
+
+            time.sleep(self.interval)

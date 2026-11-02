@@ -1,14 +1,17 @@
+import asyncio
 import time
 
 from django.conf import settings
 from django.core.cache import cache
 
-from .fetcher import MarketFetcher
+from .fetcher import MarketFetcher, MarketSnapshotFetcher
 from .comparator import MarketComparator
 from .cache import MarketCache
-from .broadcaster import MarketBroadcaster
+from .broadcaster import MarketBroadcaster, SnapShotBroadcaster
 
 from .constants import ACTIVE_MARKET_PAGE_KEY
+
+
 
 
 class MarketUpdater:
@@ -110,3 +113,40 @@ class MarketUpdater:
             time.sleep(
                 settings.MARKET_UPDATE_INTERVAL
             )
+
+
+class SnapShotUpdater:
+    def __init__(self, channel_layer):
+        self.fetcher = MarketSnapshotFetcher()
+        self.broadcaster = SnapShotBroadcaster(channel_layer)
+
+    async def update(self):
+
+        coins = self.fetcher.get_market_snapshot()
+
+        if not coins:
+            print(
+                "Snapshot update skipped: "
+                "no data received."
+            )
+            return
+
+        cache.set(  
+            "market_snapshot",
+            coins,
+            timeout=300
+        )
+
+        await self.broadcaster.broadcast(coins)
+
+    async def run(self):
+
+        while True:
+
+            await self.update()
+
+            await asyncio.sleep(300)
+
+
+
+

@@ -27,6 +27,9 @@ class CryptoConsumer(AsyncWebsocketConsumer):
         elif group == "wallet":
             self.group_name = "wallet_group"
 
+        elif group == "snapshot":
+            self.group_name = "snapshot_group"
+
         else:
             self.group_name = "general_group"
 
@@ -68,6 +71,19 @@ class CryptoConsumer(AsyncWebsocketConsumer):
         await self.send(
             text_data=json.dumps(payload)
         )
+
+    async def snapshot_update(self, event):
+
+        print("SNAPSHOT_UPDATE CALLED")
+
+        await self.send(
+            text_data=json.dumps({
+                "event": "snapshot_update",
+                "data": event.get("data"),
+            })
+        )
+
+
 
 
 

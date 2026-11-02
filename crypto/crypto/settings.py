@@ -24,14 +24,20 @@ EXCHANGE_RATE_API_KEY = os.environ.get('exchange')
 
 COIN_MARKET_API_KEY = os.environ.get('coin_market_cap_api_key')
 
+NEWS_DATA_API_KEY = os.environ.get('news_data_io_api_key')
+
 MARKET_UPDATE_INTERVAL = int(
     os.environ.get('market_update_interval', 60)
 )
 
-NEWS_API_KEY = os.environ.get('coingecko_api_key')
+COINGECKO_API_KEY = os.environ.get('coingecko_api_key')
 
 
 CRYPTO_PANIC_KEY = os.environ.get('crypto_panic_key')
+
+EMAIL = os.environ.get('email')
+
+PASSWORD = os.environ.get('password')
 
 #
 
@@ -49,6 +55,20 @@ ALLOWED_HOSTS = [
     "127.0.0.1"
 ]
 
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+
+EMAIL_HOST = "smtp.gmail.com"
+
+EMAIL_PORT = 587
+
+EMAIL_USE_TLS = True
+
+# EMAIL_USE_SSL = True
+
+EMAIL_HOST_USER = EMAIL
+EMAIL_HOST_PASSWORD = PASSWORD
+
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
 # Application definition
 
@@ -59,10 +79,17 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+
     'rest_framework',
+    'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
+
     'channels',
     'corsheaders',
+
+    'accounts',
     'api',
+
 ]
 
 ASGI_APPLICATION = "crypto.asgi.application"
@@ -106,7 +133,7 @@ TEMPLATES = [
 WSGI_APPLICATION = 'crypto.wsgi.application'
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:63343",
+    "http://localhost:63342",
 ]
 CORS_ALLOW_CREDENTIALS = True
 # Database
@@ -119,10 +146,18 @@ DATABASES = {
     }
 }
 
+
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
     }
+}
+
+
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ],
 }
 
 # Password validation
@@ -162,8 +197,10 @@ USE_TZ = True
 STATIC_URL = 'static/'
 
 CSRF_TRUSTED_ORIGINS = [
-    "http://localhost:63343",
-    "http://127.0.0.1:63343",
+    "http://localhost:63342",
+    "http://127.0.0.1:63342",
 ]
 
+
+AUTH_USER_MODEL = 'accounts.User'
 

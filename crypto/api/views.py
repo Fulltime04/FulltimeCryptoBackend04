@@ -1,47 +1,241 @@
-from django.core.mail import message
-from django.forms.models import model_to_dict
-from django.shortcuts import render
-from django.conf import settings
-import requests
-from django.http import JsonResponse
-from django.core.cache import cache
-from django.contrib.auth.models import User
-from .models import (Wallet, CoinHolding, Transaction, Notifications)
-from decimal import Decimal
-from django.db import transaction
-from django.views.decorators.csrf import ensure_csrf_cookie
-from django.views.decorators.csrf import csrf_exempt
-from django.db.models import Sum
-from django.core.exceptions import ObjectDoesNotExist
-from .services.cryptocompare import (NOTIFICATION_BANK, CURRENCY_TO_COUNTRY, get_chart_data2, TRANSACTION_CARD_BANK, get_trending_coins)
+
 import random
 import time
-from .services.market import fetcher
-from .services.utils import (send_wallet_update, send_notification_update, get_wallet_stats, send_transaction_update)
+from decimal import Decimal
 
-from .services.market.fetcher import (MarketFetcher)
+import requests
 
-from .services.news_service import _fetch_crypto_news
+from django.conf import settings
+from django.contrib.messages.api import success
+from django.core.cache import cache
+from django.db import transaction
+from django.http import JsonResponse
+from django.contrib.auth import get_user_model
+from requests import Response
+
+from django.views.decorators.http import require_GET
+from datetime import timedelta
+from django.utils import timezone
 
 
+
+
+# ============================================================
+# DJANGO REST FRAMEWORK
+# ============================================================
+
+from rest_framework.decorators import (
+    api_view,
+    permission_classes,
+)
+
+from rest_framework.permissions import (
+    IsAuthenticated,
+    AllowAny,
+)
+
+from rest_framework.response import Response
+from rest_framework import status
+
+
+# ============================================================
+# LOCAL MODELS
+# ============================================================
+
+from .models import (
+    Wallet,
+    CoinHolding,
+    Transaction,
+    Notifications,
+    NewsArticle,
+    MarketCapSnapShot
+)
+
+
+# ============================================================
+# SERVICES
+# ============================================================
+
+from .services.cryptocompare import (
+    NOTIFICATION_BANK,
+    CURRENCY_TO_COUNTRY,
+    TRANSACTION_CARD_BANK,
+    get_chart_data2,
+    get_trending_coins,
+)
+
+from .services.market.market_cap_trend import (
+    get_global_market_cap_history
+)
+
+from .services.utils import (
+    send_wallet_update,
+    send_notification_update,
+    get_wallet_stats,
+    send_transaction_update,
+)
+
+from .services.market.fetcher import (
+    MarketFetcher,
+)
+
+from .services.market.market_briefs import (
+    fetch_market_global_data,
+    fetch_fear_greed,
+)
+
+from .services.market.constants import (
+    DEFAULT_PER_PAGE,
+    CACHE_LOCK_WAIT,
+    ACTIVE_MARKET_PAGE_KEY,
+)
+
+from .services.market.cache import (
+    MarketCache,
+)
+
+
+from .services.correlation.volume_correlation import get_volume_price_correlation
+
+
+# ============================================================
+# CUSTOM USER MODEL
+# ============================================================
+
+User = get_user_model()
+
+
+# ============================================================
+# API KEYS
+# ============================================================
 
 marketCapApiKey = settings.COIN_MARKET_API_KEY
 
-print(marketCapApiKey)
-# --------------------- BEGINS ----------------------
+Exchange_Api_Key = settings.EXCHANGE_RATE_API_KEY
 
-@csrf_exempt
+
+# ============================================================
+# HELPER FUNCTIONS
+# ============================================================
+
+
+def create_Notification(
+    user,
+    notification_type,
+    **kwargs
+):
+    """
+    Create a notification for the authenticated user.
+    """
+
+    template = NOTIFICATION_BANK[notification_type]
+
+    title = template["title"]
+
+    message = random.choice(
+        template["messages"]
+    ).format(**kwargs)
+
+    icons = random.choice(
+        template["icons"]
+    )
+
+    notify = Notifications.objects.create(
+        user=user,
+        type=notification_type,
+        title=title,
+        message=message,
+        icons=icons,
+    )
+
+    return notify
+
+
+def createTransaction(
+    user,
+    transactionType,
+    **kwargs
+):
+    """
+    Create a transaction record for the authenticated user.
+    """
+
+    template = TRANSACTION_CARD_BANK[
+        transactionType
+    ]
+
+    transact = Transaction.objects.create(
+        user=user,
+        type=transactionType,
+
+        icon=random.choice(
+            template["icons"]
+        ),
+
+        title=random.choice(
+            template["titles"]
+        ),
+
+        message=random.choice(
+            template["messages"]
+        ).format(**kwargs),
+
+        status=random.choice(
+            template["status"]
+        ),
+
+        **kwargs
+    )
+
+    return transact
+
+
+# ============================================================
+# WALLET — DEPOSIT
+# ============================================================
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
 @transaction.atomic
 def deposit(request):
-    try:
-        amount = Decimal(request.POST.get("amount"))
-        user = User.objects.get(username='fulltime')
 
-        wallet, created = Wallet.objects.get_or_create(user=user)
+    try:
+
+        print("Deposit Request: ", request.data)
+
+        amount = Decimal(
+            request.data.get("amount")
+        )
+
+        # IMPORTANT:
+        # We no longer search for "fulltime".
+        #
+        # request.user is the user authenticated
+        # by the JWT access token.
+
+        user = request.user
+
+        if not amount:
+            return JsonResponse({
+                "success": False,
+                "error": "Amount is required."
+            }, status=400)
+
+        amount = Decimal(amount)
+
+        if amount <= 0:
+            return JsonResponse({
+                "success": False,
+                "error": "Amount must be greater than 0."
+            }, status=400)
+
+        wallet, created = Wallet.objects.get_or_create(
+            user=user
+        )
 
         wallet.balance += amount
         wallet.save()
-
 
         transact = createTransaction(
             user=user,
@@ -49,7 +243,9 @@ def deposit(request):
             amount=amount
         )
 
-        transaction_count = Transaction.objects.filter(user=user).count()
+        transaction_count = Transaction.objects.filter(
+            user=user
+        ).count()
 
         notify = create_Notification(
             user=user,
@@ -57,7 +253,9 @@ def deposit(request):
             amount=amount,
         )
 
-        count = Notifications.objects.filter(user=user).count()
+        count = Notifications.objects.filter(
+            user=user
+        ).count()
 
         send_wallet_update(
             user=user,
@@ -71,7 +269,11 @@ def deposit(request):
             count
         )
 
-        send_transaction_update(user, transact, transaction_count)
+        send_transaction_update(
+            user,
+            transact,
+            transaction_count
+        )
 
         return JsonResponse({
             "success": True,
@@ -79,23 +281,43 @@ def deposit(request):
         })
 
     except Exception as e:
+
         return JsonResponse({
             "success": False,
             "error": str(e)
         }, status=400)
 
 
+# ============================================================
+# WALLET — WITHDRAW
+# ============================================================
 
-@csrf_exempt
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
 @transaction.atomic
 def withdraw(request):
-    try:
-        amount = Decimal(request.POST.get("amount"))
-        user = User.objects.get(username='fulltime')
-        wallet = Wallet.objects.get(user=user)
 
+    try:
+
+        amount = Decimal(
+            request.data.get("amount")
+        )
+
+        user = request.user
+
+        if amount <= 0:
+            return JsonResponse({
+                "success": False,
+                "error": "Amount must be greater than 0."
+            }, status=400)
+
+        wallet = Wallet.objects.select_for_update().get(
+            user=user
+        )
 
         if wallet.balance < amount:
+
             return JsonResponse({
                 "success": False,
                 "error": "Insufficient balance"
@@ -110,7 +332,9 @@ def withdraw(request):
             amount=amount
         )
 
-        transaction_count = Transaction.objects.filter(user=user).count()
+        transaction_count = Transaction.objects.filter(
+            user=user
+        ).count()
 
         notify = create_Notification(
             user=user,
@@ -118,7 +342,9 @@ def withdraw(request):
             amount=amount,
         )
 
-        count = Notifications.objects.filter(user=user).count()
+        count = Notifications.objects.filter(
+            user=user
+        ).count()
 
         send_wallet_update(
             user=user,
@@ -132,37 +358,54 @@ def withdraw(request):
             count
         )
 
-        send_transaction_update(user, transact, transaction_count)
-
+        send_transaction_update(
+            user,
+            transact,
+            transaction_count
+        )
 
         return JsonResponse({
             "success": True,
             "balance": str(wallet.balance)
         })
 
-
     except Exception as e:
+
         return JsonResponse({
             "success": False,
             "error": str(e)
         }, status=400)
 
 
+# ============================================================
+# BUY COIN
+# ============================================================
 
 
-@csrf_exempt
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
 @transaction.atomic
-def sell_coin(request):
+def buy_coin(request):
+
     try:
-        user = User.objects.get(username="fulltime")
 
-        coin = request.POST.get("coin", "btc")
-        current_price = Decimal(request.POST.get("price", "0"))
-        quantity = Decimal(request.POST.get("quantity", "0"))
+        user = request.user
 
-        # ---------------------------
-        # VALIDATIONS
-        # ---------------------------
+        coin = request.data.get("coin")
+
+        quantity = Decimal(
+            request.data.get("quantity")
+        )
+
+        current_price = Decimal(
+            request.data.get("price")
+        )
+
+        if not coin:
+            return JsonResponse({
+                "success": False,
+                "error": "Coin is required."
+            }, status=400)
 
         if quantity <= 0:
             return JsonResponse({
@@ -170,6 +413,235 @@ def sell_coin(request):
                 "error": "Quantity must be greater than 0"
             }, status=400)
 
+        if current_price <= 0:
+            return JsonResponse({
+                "success": False,
+                "error": "Invalid coin price"
+            }, status=400)
+
+        wallet = Wallet.objects.select_for_update().get(
+            user=user
+        )
+
+        # ====================================================
+        # TOTAL COST
+        # ====================================================
+
+        total_cost = (
+            quantity *
+            current_price
+        )
+
+        if wallet.balance < total_cost:
+            return JsonResponse({
+                "success": False,
+                "error": "Insufficient balance"
+            }, status=400)
+
+        # ====================================================
+        # FEE
+        # ====================================================
+
+        fee_rate = Decimal("0.001")
+
+        fee = (
+            total_cost *
+            fee_rate
+        )
+
+        total_cost_with_fee = (
+            total_cost +
+            fee
+        )
+
+        # ====================================================
+        # HOLDING
+        # ====================================================
+
+        holding, created = (
+            CoinHolding.objects
+            .select_for_update()
+            .get_or_create(
+                user=user,
+                coin=coin,
+                defaults={
+                    "quantity": Decimal("0"),
+                    "average_buy_price": Decimal("0")
+                }
+            )
+        )
+
+        old_qty = holding.quantity
+
+        old_avg = (
+            holding.average_buy_price
+        )
+
+        new_total_qty = (
+            old_qty +
+            quantity
+        )
+
+        # ====================================================
+        # WEIGHTED AVERAGE PRICE
+        # ====================================================
+
+        if new_total_qty > 0:
+
+            holding.average_buy_price = (
+                (
+                    old_qty * old_avg
+                )
+                +
+                (
+                    quantity *
+                    current_price
+                )
+            ) / new_total_qty
+
+        holding.quantity = new_total_qty
+
+        holding.save()
+
+        # ====================================================
+        # DEDUCT WALLET
+        # ====================================================
+
+        wallet.balance -= (
+            total_cost_with_fee
+        )
+
+        wallet.save()
+
+        # ====================================================
+        # CREATE TRANSACTION
+        # ====================================================
+
+        transact = createTransaction(
+            user=user,
+            transactionType="BUY",
+            coin=coin,
+            amount=total_cost,
+            quantity=quantity,
+            price_per_coin=current_price,
+            fee=fee,
+            Coin_quantity_balance=new_total_qty,
+        )
+
+        transaction_count = Transaction.objects.filter(
+            user=user
+        ).count()
+
+        # ====================================================
+        # CREATE NOTIFICATION
+        # ====================================================
+
+        notify = create_Notification(
+            user=user,
+            notification_type="BUY",
+            amount=total_cost,
+            quantity=quantity,
+            coin=coin,
+        )
+
+        count = Notifications.objects.filter(
+            user=user
+        ).count()
+
+        # ====================================================
+        # WEBSOCKET UPDATES
+        # ====================================================
+
+        send_wallet_update(
+            user=user,
+            transaction_type="BUY",
+            amount=total_cost,
+            coin=coin,
+            quantity=quantity
+        )
+
+        send_notification_update(
+            user,
+            notify,
+            count
+        )
+
+        send_transaction_update(
+            user,
+            transact,
+            transaction_count
+        )
+
+        return JsonResponse({
+            "success": True,
+            "balance": str(
+                wallet.balance
+            ),
+            "quantity": str(
+                holding.quantity
+            ),
+            "average_buy_price": str(
+                holding.average_buy_price
+            ),
+            "fee": str(fee),
+            "cost": str(
+                total_cost_with_fee
+            ),
+            "Coin_quantity_balance": str(
+                transact.Coin_quantity_balance
+            ),
+        })
+
+    except Exception as e:
+
+        return JsonResponse({
+            "success": False,
+            "error": str(e)
+        }, status=400)
+
+
+# ============================================================
+# SELL COIN
+# ============================================================
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+@transaction.atomic
+def sell_coin(request):
+
+    try:
+
+        user = request.user
+
+        coin = request.data.get(
+            "coin",
+            "btc"
+        )
+
+        current_price = Decimal(
+            request.data.get(
+                "price",
+                "0"
+            )
+        )
+
+        quantity = Decimal(
+            request.data.get(
+                "quantity",
+                "0"
+            )
+        )
+
+        # ====================================================
+        # VALIDATION
+        # ====================================================
+
+        if quantity <= 0:
+            return JsonResponse({
+                "success": False,
+                "error": "Quantity must be greater than 0"
+            }, status=400)
 
         if current_price <= 0:
             return JsonResponse({
@@ -177,81 +649,114 @@ def sell_coin(request):
                 "error": "Invalid coin price"
             }, status=400)
 
-        # ---------------------------
-        # CHECK HOLDING
-        # ---------------------------
+        # ====================================================
+        # FIND HOLDING
+        # ====================================================
 
-        holding = CoinHolding.objects.select_for_update().filter(
-            user=user,
-            coin=coin
-        ).first()
+        holding = (
+            CoinHolding.objects
+            .select_for_update()
+            .filter(
+                user=user,
+                coin=coin
+            )
+            .first()
+        )
 
         if not holding:
+
             return JsonResponse({
                 "success": False,
                 "error": f"You do not own any {coin}"
             }, status=400)
 
-        print({
-            "coin": coin,
-            "holding_quantity": str(holding.quantity),
-            "requested_quantity": str(quantity)
-        })
-
         if holding.quantity < quantity:
+
             return JsonResponse({
                 "success": False,
                 "error": (
-                    f"Insufficient coin balance. "
+                    "Insufficient coin balance. "
                     f"You own {holding.quantity} {coin} "
                     f"but tried to sell {quantity}."
                 )
             }, status=400)
 
-        # ---------------------------
+        # ====================================================
         # CALCULATIONS
-        # ---------------------------
+        # ====================================================
 
-        avg_buy_price = holding.average_buy_price
+        avg_buy_price = (
+            holding.average_buy_price
+        )
 
-        gross_amount = quantity * current_price
+        gross_amount = (
+            quantity *
+            current_price
+        )
 
-        fee_rate = Decimal("0.001")  # 0.1%
-        fee = gross_amount * fee_rate
+        fee_rate = Decimal("0.001")
 
-        received = gross_amount - fee
+        fee = (
+            gross_amount *
+            fee_rate
+        )
 
-        cost_basis = quantity * avg_buy_price
+        received = (
+            gross_amount -
+            fee
+        )
 
-        profit = received - cost_basis
+        cost_basis = (
+            quantity *
+            avg_buy_price
+        )
 
-        # ---------------------------
+        profit = (
+            received -
+            cost_basis
+        )
+
+        # ====================================================
         # UPDATE WALLET
-        # ---------------------------
+        # ====================================================
 
-        wallet = Wallet.objects.select_for_update().get(user=user)
+        wallet = (
+            Wallet.objects
+            .select_for_update()
+            .get(user=user)
+        )
 
         wallet.balance += received
+
         wallet.save()
 
-        # ---------------------------
-        # UPDATE HOLDINGS
-        # ---------------------------
+        # ====================================================
+        # UPDATE HOLDING
+        # ====================================================
 
-        old_quantity = holding.quantity
+        old_quantity = (
+            holding.quantity
+        )
 
         holding.quantity -= quantity
 
         if holding.quantity <= 0:
-            holding.delete()
-            remaining_quantity = Decimal("0")
-        else:
-            holding.save()
-            remaining_quantity = holding.quantity
 
-        # ---------------------------
-        # SAVE TRANSACTION
-        # ---------------------------
+            holding.delete()
+
+            remaining_quantity = Decimal("0")
+
+        else:
+
+            holding.save()
+
+            remaining_quantity = (
+                holding.quantity
+            )
+
+        # ====================================================
+        # TRANSACTION
+        # ====================================================
 
         transact = createTransaction(
             user=user,
@@ -265,7 +770,13 @@ def sell_coin(request):
             Coin_quantity_balance=remaining_quantity
         )
 
-        transaction_count = Transaction.objects.filter(user=user).count()
+        transaction_count = Transaction.objects.filter(
+            user=user
+        ).count()
+
+        # ====================================================
+        # NOTIFICATION
+        # ====================================================
 
         notify = create_Notification(
             user=user,
@@ -275,17 +786,13 @@ def sell_coin(request):
             coin=coin
         )
 
-        count = Notifications.objects.filter(user=user).count()
+        count = Notifications.objects.filter(
+            user=user
+        ).count()
 
-        print({
-            "coin": coin,
-            "old_quantity": str(old_quantity),
-            "sold_quantity": str(quantity),
-            "remaining_quantity": int(remaining_quantity),
-            "received": str(received),
-            "profit": str(profit),
-            "wallet_balance": str(wallet.balance)
-        })
+        # ====================================================
+        # WEBSOCKET
+        # ====================================================
 
         send_wallet_update(
             user=user,
@@ -295,154 +802,71 @@ def sell_coin(request):
             quantity=quantity
         )
 
-        send_notification_update(user,notify, count)
+        send_notification_update(
+            user,
+            notify,
+            count
+        )
 
-        send_transaction_update(user, transact, transaction_count)
+        send_transaction_update(
+            user,
+            transact,
+            transaction_count
+        )
 
         return JsonResponse({
             "success": True,
             "coin": coin,
-            "sold_quantity": str(quantity),
-            "remaining_quantity": int(remaining_quantity),
-            "balance": str(wallet.balance),
-            "received": str(received),
-            "profit": str(profit),
-            "fee": str(fee),
-            "avg_buy_price": str(avg_buy_price),
-            "Coin_quantity_balance": str(transact.Coin_quantity_balance),
+            "sold_quantity": str(
+                quantity
+            ),
+            "remaining_quantity": str(
+                remaining_quantity
+            ),
+            "balance": str(
+                wallet.balance
+            ),
+            "received": str(
+                received
+            ),
+            "profit": str(
+                profit
+            ),
+            "fee": str(
+                fee
+            ),
+            "avg_buy_price": str(
+                avg_buy_price
+            ),
+            "Coin_quantity_balance": str(
+                transact.Coin_quantity_balance
+            ),
         })
 
     except Exception as e:
+
         return JsonResponse({
             "success": False,
             "error": str(e)
         }, status=400)
 
 
-@csrf_exempt
-@transaction.atomic
-def buy_coin(request):
-    try:
-        user = User.objects.get(username='fulltime')
-
-        coin = request.POST.get("coin")
-
-        # 🟢 THIS IS NOW COIN QUANTITY (NOT USD)
-        quantity = Decimal(request.POST.get("quantity"))
-
-        if quantity <= 0:
-            return JsonResponse({
-                "success": False,
-                "error": "Quantity must be greater than 0"
-            }, status=400)
-
-        current_price = Decimal(request.POST.get("price"))
-
-        wallet = Wallet.objects.select_for_update().get(user=user)
-
-        # 💰 TOTAL COST = quantity × price
-        total_cost = quantity * current_price
-
-        if wallet.balance < total_cost:
-            return JsonResponse({
-                "success": False,
-                "error": "Insufficient balance"
-            }, status=400)
-
-        # 💸 fee is based on actual money spent
-        fee_rate = Decimal("0.001")
-        fee = total_cost * fee_rate
-
-        total_cost_with_fee = total_cost + fee
-
-        # 📦 update holdings
-        holding, _ = CoinHolding.objects.select_for_update().get_or_create(
-            user=user,
-            coin=coin,
-            defaults={
-                "quantity": Decimal("0"),
-                "average_buy_price": Decimal("0")
-            }
-        )
-
-        old_qty = holding.quantity
-        old_avg = holding.average_buy_price
-
-        new_total_qty = old_qty + quantity
-
-        # 📊 weighted average price
-        if new_total_qty > 0:
-            holding.average_buy_price = (
-                (old_qty * old_avg) + (quantity * current_price)
-            ) / new_total_qty
-
-        holding.quantity = new_total_qty
-        holding.save()
-
-        # 💳 deduct wallet
-        wallet.balance -= total_cost_with_fee
-        wallet.save()
-
-        # 🧾 log transaction
-        transact = createTransaction(
-            user=user,
-            transactionType="BUY",
-            coin=coin,
-            amount=total_cost,   # money spent before fee (or include fee if you want)
-            quantity=quantity,
-            price_per_coin=current_price,
-            fee=fee,
-            Coin_quantity_balance=new_total_qty,
-        )
-
-        transaction_count = Transaction.objects.filter(user=user).count()
-
-        notify = create_Notification(
-            user=user,
-            notification_type="BUY",
-            amount=total_cost,
-            quantity=quantity,
-            coin=coin,
-        )
-        count = Notifications.objects.filter(user=user).count()
-
-        send_wallet_update(
-            user=user,
-            transaction_type="BUY",
-            amount=total_cost,
-            coin=coin,
-            quantity=quantity
-        )
-
-        send_notification_update(user, notify, count)
-
-        send_transaction_update(user, transact, transaction_count)
-
-        print("coin_balance:", transact.Coin_quantity_balance)
-
-        return JsonResponse({
-            "success": True,
-            "balance": str(wallet.balance),
-            "quantity": str(holding.quantity),
-            "average_buy_price": str(holding.average_buy_price),
-            "fee": str(fee),
-            "cost": str(total_cost_with_fee),
-            "Coin_quantity_balance": str(transact.Coin_quantity_balance),
-        })
-
-    except Exception as e:
-        return JsonResponse({
-            "success": False,
-            "error": str(e)
-        }, status=400)
+# ============================================================
+# WALLET DATA
+# ============================================================
 
 
-
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def wallet_data(request):
-    try:
-        user = User.objects.get(username='fulltime')
 
-        data = get_wallet_stats(user)
+    try:
+
+        user = request.user
+
+        data = get_wallet_stats(
+            user
+        )
 
         return JsonResponse({
             "success": True,
@@ -450,38 +874,88 @@ def wallet_data(request):
         })
 
     except Exception as e:
-        return JsonResponse({"success": False, "error": str(e)}, status=500)
+
+        return JsonResponse({
+            "success": False,
+            "error": str(e)
+        }, status=500)
 
 
+# ============================================================
+# COINGECKO — BASIC MARKET
+# ============================================================
 
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
 def index(request):
-    cache_key = 'list_coins_Keys'
-    cache_data = cache.get(cache_key)
+
+    cache_key = "list_coins_Keys"
+
+    cache_data = cache.get(
+        cache_key
+    )
+
     if cache_data:
-        return JsonResponse(cache_data, safe=False)
+
+        return JsonResponse(
+            cache_data,
+            safe=False
+        )
 
     try:
-       url = "https://api.coingecko.com/api/v3/coins/markets"
-       response = requests.get(url, params={
-        "vs_currency": "usd",
-        "order": "market_cap_desc",
-        "per_page": 250,
-        "page": 1
-    })
 
-       data = response.json()
+        url = (
+            "https://api.coingecko.com/"
+            "api/v3/coins/markets"
+        )
 
-       cache.set(cache_key, data)
-       return JsonResponse(data, safe=False)
+        response = requests.get(
+            url,
+            params={
+                "vs_currency": "usd",
+                "order": "market_cap_desc",
+                "per_page": 250,
+                "page": 1,
+            },
+            timeout=10
+        )
+
+        response.raise_for_status()
+
+        data = response.json()
+
+        cache.set(
+            cache_key,
+            data,
+            timeout=300
+        )
+
+        return JsonResponse(
+            data,
+            safe=False
+        )
 
     except Exception as e:
-        return JsonResponse({'error': str(e)}, safe=False)
+
+        return JsonResponse({
+            "error": str(e)
+        }, status=503)
 
 
+# ============================================================
+# CHART DATA
+# ============================================================
 
 
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def chart_data2(
+    request,
+    coin,
+    days
+):
 
-def chart_data2(request, coin, days):
     try:
 
         data = get_chart_data2(
@@ -489,13 +963,18 @@ def chart_data2(request, coin, days):
             days
         )
 
-        return JsonResponse(data, safe=False)
+        return JsonResponse(
+            data,
+            safe=False
+        )
 
     except requests.exceptions.HTTPError as e:
-        print(f"Coin: {coin}")
-        print(f"Error: {e}")
 
-        if e.response.status_code == 429:
+        if (
+            e.response
+            and e.response.status_code == 429
+        ):
+
             return JsonResponse({
                 "success": False,
                 "error": "Rate_limit_exceeded"
@@ -506,27 +985,83 @@ def chart_data2(request, coin, days):
         }, status=400)
 
 
+# ============================================================
+# CURRENCY CONVERTER
+# ============================================================
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def convert_currencies(request):
-    user = User.objects.get(username='fulltime')
-    amount = request.GET.get("amount", "1")
-    from_Currency = request.GET.get("from_Currency", "USD")
-    to_Currency = request.GET.get("to_Currency", "NGN")
 
-    amount = int(amount)
+    user = request.user
 
-    cache_key = f"{from_Currency}_rates"
-    data = cache.get(cache_key)
+    amount = request.GET.get(
+        "amount",
+        "1"
+    )
+
+    from_Currency = request.GET.get(
+        "from_Currency",
+        "USD"
+    )
+
+    to_Currency = request.GET.get(
+        "to_Currency",
+        "NGN"
+    )
 
     try:
+
+        amount = Decimal(
+            amount
+        )
+
+        cache_key = (
+            f"{from_Currency}_rates"
+        )
+
+        data = cache.get(
+            cache_key
+        )
+
         if not data:
-            url = f"https://open.er-api.com/v6/latest/{from_Currency}"
-            res = requests.get(url)
+
+            url = (
+                f"https://open.er-api.com/"
+                f"v6/latest/{from_Currency}"
+            )
+
+            res = requests.get(
+                url,
+                timeout=10
+            )
+
+            res.raise_for_status()
+
             data = res.json()
 
-            cache.set(cache_key, data, timeout=300)  # 5 mins
+            cache.set(
+                cache_key,
+                data,
+                timeout=300
+            )
 
-        rates = data["rates"].get(to_Currency)
-        result = amount * rates
+        rates = data["rates"].get(
+            to_Currency
+        )
+
+        if rates is None:
+
+            return JsonResponse({
+                "success": False,
+                "error": "Currency not supported."
+            }, status=400)
+
+        result = (
+            amount *
+            Decimal(str(rates))
+        )
 
         notify = create_Notification(
             user=user,
@@ -537,7 +1072,9 @@ def convert_currencies(request):
             to_Currency=to_Currency,
         )
 
-        count = Notifications.objects.filter(user=user).count()
+        count = Notifications.objects.filter(
+            user=user
+        ).count()
 
         send_notification_update(
             user,
@@ -545,126 +1082,247 @@ def convert_currencies(request):
             count
         )
 
-
         return JsonResponse({
+            "success": True,
             "rates": rates,
-            "result": round(result, 2)
+            "result": round(
+                result,
+                2
+            )
         })
 
     except Exception as e:
-        print("ERROR:", str(e))
-        return JsonResponse({"error": str(e)}, status=500)
+
+        return JsonResponse({
+            "success": False,
+            "error": str(e)
+        }, status=500)
 
 
+# ============================================================
+# EXCHANGE RATES
+# ============================================================
 
-Exchange_Api_Key = settings.EXCHANGE_RATE_API_KEY
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
 def exchangerates(request):
-    cache_key = f"exchangerates"
-    cache_data = cache.get(cache_key)
 
-    if cache_data:
-        return JsonResponse(cache_data, safe=False)
+    cache_key = "exchangerates"
 
-    try:
-        url = "https://v6.exchangerate-api.com/v6/{}/latest/USD".format(Exchange_Api_Key)
-
-        response = requests.get(url)
-        data = response.json()
-
-        newdata = []
-        data = data["conversion_rates"]
-
-        for x in data:
-            newdata.append({
-                'flagUrl': f"https://flagcdn.com/w40/{CURRENCY_TO_COUNTRY[x]}.png",
-                "data": x
-            })
-
-        cache.set(cache_key, newdata, timeout=300)
-
-        return JsonResponse(newdata, safe=False)
-
-    except Exception as e:
-        return JsonResponse({"error": str(e)}, status=500)
-
-
-
-def Trending(request):
-    cache_key = f"trending"
-    cache_data = cache.get(cache_key)
-
-    if cache_data:
-        return JsonResponse(cache_data, safe=False)
-
-    try:
-        url = "https://api.coingecko.com/api/v3/search/trending"
-        response = requests.get(url)
-        data = response.json()
-
-        cache.set(cache_key, data, timeout=300)
-
-        return JsonResponse(data,safe=False)
-
-    except Exception as e:
-        return JsonResponse({"error": str(e)}, status=500)
-
-def Popular(request):
-    cache_key = "popular"
-    cache_data = cache.get(cache_key)
-
-    if cache_data:
-        return JsonResponse(cache_data, safe=False)
-
-    try:
-        url = "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=12&page=1&sparkline=true"
-
-        response = requests.get(url)
-        data = response.json()
-
-        cache.set(cache_key, data, timeout=300)
-
-        return JsonResponse(data,safe=False)
-
-    except Exception as e:
-        return JsonResponse({"error": str(e)}, status=500)
-
-
-
-def create_Notification(user, notification_type, **kwargs):
-    template = NOTIFICATION_BANK[notification_type]
-
-    title = template["title"]
-
-    message = random.choice(
-        template["messages"]
-    ).format(**kwargs)
-
-    icons = random.choice(template["icons"])
-
-
-    notify = Notifications.objects.create(
-        user=user,
-        type=notification_type,
-        title=title,
-        message=message,
-        icons=icons,
+    cache_data = cache.get(
+        cache_key
     )
 
+    if cache_data:
 
-    return notify
-
-
-
-def notification(request):
-    try:
-        user = User.objects.get(username='fulltime')
-
-        notifications = (
-            Notifications.objects.filter(user=user).order_by("-created_at")
+        return JsonResponse(
+            cache_data,
+            safe=False
         )
 
+    try:
+
+        url = (
+            "https://v6.exchangerate-api.com/"
+            f"v6/{Exchange_Api_Key}/latest/USD"
+        )
+
+        response = requests.get(
+            url,
+            timeout=10
+        )
+
+        response.raise_for_status()
+
+        data = response.json()
+
+        conversion_rates = data[
+            "conversion_rates"
+        ]
+
+        newdata = []
+
+        for currency in conversion_rates:
+
+            country_code = (
+                CURRENCY_TO_COUNTRY.get(
+                    currency
+                )
+            )
+
+            flag_url = None
+
+            if country_code:
+
+                flag_url = (
+                    f"https://flagcdn.com/"
+                    f"w40/{country_code}.png"
+                )
+
+            newdata.append({
+                "flagUrl": flag_url,
+                "data": currency
+            })
+
+        cache.set(
+            cache_key,
+            newdata,
+            timeout=300
+        )
+
+        return JsonResponse(
+            newdata,
+            safe=False
+        )
+
+    except Exception as e:
+
+        return JsonResponse({
+            "error": str(e)
+        }, status=500)
+
+
+# ============================================================
+# TRENDING
+# ============================================================
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def Trending(request):
+
+    cache_key = "trending"
+
+    cache_data = cache.get(
+        cache_key
+    )
+
+    if cache_data:
+
+        return JsonResponse(
+            cache_data,
+            safe=False
+        )
+
+    try:
+
+        url = (
+            "https://api.coingecko.com/"
+            "api/v3/search/trending"
+        )
+
+        response = requests.get(
+            url,
+            timeout=10
+        )
+
+        response.raise_for_status()
+
+        data = response.json()
+
+        cache.set(
+            cache_key,
+            data,
+            timeout=300
+        )
+
+        return JsonResponse(
+            data,
+            safe=False
+        )
+
+    except Exception as e:
+
+        return JsonResponse({
+            "error": str(e)
+        }, status=503)
+
+
+# ============================================================
+# POPULAR
+# ============================================================
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def Popular(request):
+
+    cache_key = "popular"
+
+    cache_data = cache.get(
+        cache_key
+    )
+
+    if cache_data:
+
+        return JsonResponse(
+            cache_data,
+            safe=False
+        )
+
+    try:
+
+        url = (
+            "https://api.coingecko.com/"
+            "api/v3/coins/markets"
+        )
+
+        response = requests.get(
+            url,
+            params={
+                "vs_currency": "usd",
+                "order": "market_cap_desc",
+                "per_page": 12,
+                "page": 1,
+                "sparkline": "true",
+            },
+            timeout=10
+        )
+
+        response.raise_for_status()
+
+        data = response.json()
+
+        cache.set(
+            cache_key,
+            data,
+            timeout=300
+        )
+
+        return JsonResponse(
+            data,
+            safe=False
+        )
+
+    except Exception as e:
+
+        return JsonResponse({
+            "error": str(e)
+        }, status=503)
+
+
+# ============================================================
+# NOTIFICATIONS
+# ============================================================
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def notification(request):
+
+    try:
+
+        user = request.user
+
+        notifications = (
+            Notifications.objects
+            .filter(user=user)
+            .order_by("-created_at")
+        )
 
         data = [
+
             {
                 "id": n.id,
                 "notification_type": n.type,
@@ -672,61 +1330,76 @@ def notification(request):
                 "message": n.message,
                 "is_read": n.is_read,
                 "icons": n.icons,
-                "created_at": n.created_at.isoformat()
+                "created_at": n.created_at.isoformat(),
             }
+
             for n in notifications
         ]
 
-        return JsonResponse(data, safe=False)
+        return JsonResponse(
+            data,
+            safe=False
+        )
 
     except Exception as e:
-        return JsonResponse({"error": str(e)}, status=500)
+
+        return JsonResponse({
+            "error": str(e)
+        }, status=500)
 
 
+# ============================================================
+# NOTIFICATION COUNT
+# ============================================================
 
 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def notification_count(request):
-    user = User.objects.get(username='fulltime')
-    count = Notifications.objects.filter(user=user).count()
+
+    user = request.user
+
+    count = Notifications.objects.filter(
+        user=user
+    ).count()
 
     return JsonResponse({
         "count": count
     })
 
+
+# ============================================================
+# TRANSACTION COUNT
+# ============================================================
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def transaction_counter(request):
-    user = User.objects.get(username='fulltime')
-    count = Transaction.objects.filter(user=user).count()
+
+    user = request.user
+
+    count = Transaction.objects.filter(
+        user=user
+    ).count()
 
     return JsonResponse({
         "count": count
     })
 
 
-import random
-
-def createTransaction(user, transactionType, **kwargs):
-
-    template = TRANSACTION_CARD_BANK[transactionType]
-
-    transact = Transaction.objects.create(
-        user=user,
-        type=transactionType,
-
-        icon=random.choice(template["icons"]),
-        title=random.choice(template["titles"]),
-        message=random.choice(template["messages"]).format(**kwargs),
-        status=random.choice(template["status"]),
-
-        **kwargs
-    )
-
-    return transact
+# ============================================================
+# ALL TRANSACTIONS
+# ============================================================
 
 
-
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def AllTransactions(request):
+
     try:
-        user = User.objects.get(username="fulltime")
+
+        user = request.user
 
         transactions = (
             Transaction.objects
@@ -736,91 +1409,187 @@ def AllTransactions(request):
 
         data = []
 
-        for transaction in transactions:
-
-            template = TRANSACTION_CARD_BANK[transaction.type]
+        for item in transactions:
 
             data.append({
-                "id": transaction.id,
 
-                "type": transaction.type,
+                "id": item.id,
 
-                "icon": transaction.icon,
+                "type": item.type,
 
-                "title": transaction.title,
+                "icon": item.icon,
 
-                "message": transaction.message,
+                "title": item.title,
 
-                "status": transaction.status,
+                "message": item.message,
+
+                "status": item.status,
 
                 "coin": (
-                    transaction.coin
-                    if transaction.coin else ""
+                    item.coin
+                    if item.coin
+                    else ""
                 ),
 
+                "quantity": (
+                    str(item.quantity)
+                    if item.quantity
+                    else ""
+                ),
 
-                "quantity": str(transaction.quantity if transaction.quantity else ""),
+                "Coin_quantity_balance": (
+                    str(
+                        item.Coin_quantity_balance
+                    )
+                    if item.Coin_quantity_balance
+                    else ""
+                ),
 
-                "Coin_quantity_balance": str(transaction.Coin_quantity_balance if transaction.quantity else ""),
+                "price_per_coin": (
+                    str(
+                        item.price_per_coin
+                    )
+                    if item.price_per_coin
+                    else ""
+                ),
 
-                "price_per_coin": str(transaction.price_per_coin if transaction.price_per_coin else ""),
+                "amount": str(
+                    item.amount
+                ),
 
-                "amount": str(transaction.amount),
+                "fee": (
+                    str(item.fee)
+                    if item.fee
+                    else ""
+                ),
 
-                "fee": str(transaction.fee if transaction.fee else ""),
-
-                "created_at": transaction.created_at,
+                "created_at": (
+                    item.created_at.isoformat()
+                ),
             })
 
-        return JsonResponse(data, safe=False)
-
-    except Exception as e:
         return JsonResponse(
-            {"error": str(e)},
-            status=500
+            data,
+            safe=False
         )
 
+    except Exception as e:
 
+        return JsonResponse({
+            "error": str(e)
+        }, status=500)
+
+
+# ============================================================
+# COIN MARKET CAPS
+# ============================================================
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
 def coinMarketCaps(request):
+
     cache_key = "coinMarketCaps"
-    cache_data = cache.get(cache_key)
+
+    cache_data = cache.get(
+        cache_key
+    )
 
     if cache_data:
-        return JsonResponse(cache_data, safe=False)
+
+        return JsonResponse(
+            cache_data,
+            safe=False
+        )
 
     try:
-        url = "https://pro-api.coinmarketcap.com/v1/cryptocurrency/listings/latest"
+
+        url = (
+            "https://pro-api.coinmarketcap.com/"
+            "v1/cryptocurrency/listings/latest"
+        )
+
         headers = {
-            "X-CMC_PRO_API_KEY": marketCapApiKey
-        }
-        params = {
-            "limit": 1000,
+            "X-CMC_PRO_API_KEY":
+                marketCapApiKey
         }
 
-        response = requests.get(url, params=params, headers=headers)
+        params = {
+            "limit": 1000
+        }
+
+        response = requests.get(
+            url,
+            params=params,
+            headers=headers,
+            timeout=10
+        )
+
+        response.raise_for_status()
+
         data = response.json()
+
         myData = data["data"]
 
-        return JsonResponse(myData, safe=False)
+        cache.set(
+            cache_key,
+            myData,
+            timeout=300
+        )
+
+        return JsonResponse(
+            myData,
+            safe=False
+        )
 
     except Exception as e:
-        return JsonResponse({"error": str(e)}, status=500)
+
+        return JsonResponse({
+            "error": str(e)
+        }, status=500)
 
 
+# ============================================================
+# COIN CONVERSION
+# ============================================================
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def coinConversion(request):
-    amount = request.GET.get("amount")
-    from_coin_id = request.GET.get("fromCoinId")
-    to_coin_id = request.GET.get("toCoinId")
-    user = User.objects.get(username='fulltime')
 
-    fromName = request.GET.get("fromName")
-    toName = request.GET.get("toName")
+    user = request.user
+
+    amount = request.GET.get(
+        "amount"
+    )
+
+    from_coin_id = request.GET.get(
+        "fromCoinId"
+    )
+
+    to_coin_id = request.GET.get(
+        "toCoinId"
+    )
+
+    fromName = request.GET.get(
+        "fromName"
+    )
+
+    toName = request.GET.get(
+        "toName"
+    )
 
     try:
-        url = "https://pro-api.coinmarketcap.com/v2/tools/price-conversion"
+
+        url = (
+            "https://pro-api.coinmarketcap.com/"
+            "v2/tools/price-conversion"
+        )
 
         headers = {
-            "X-CMC_PRO_API_KEY": marketCapApiKey
+            "X-CMC_PRO_API_KEY":
+                marketCapApiKey
         }
 
         params = {
@@ -829,12 +1598,23 @@ def coinConversion(request):
             "convert_id": to_coin_id,
         }
 
+        response = requests.get(
+            url,
+            params=params,
+            headers=headers,
+            timeout=10
+        )
 
-        response = requests.get(url, params=params, headers=headers)
+        response.raise_for_status()
+
         data = response.json()
 
-        result_Amount = data["data"]["quote"][to_coin_id]["price"]
-        print(result_Amount)
+        result_Amount = (
+            data["data"]
+            ["quote"]
+            [to_coin_id]
+            ["price"]
+        )
 
         notify = create_Notification(
             user=user,
@@ -845,7 +1625,9 @@ def coinConversion(request):
             to_coin_id=toName,
         )
 
-        count = Notifications.objects.filter(user=user).count()
+        count = Notifications.objects.filter(
+            user=user
+        ).count()
 
         send_notification_update(
             user,
@@ -853,38 +1635,57 @@ def coinConversion(request):
             count
         )
 
-        return JsonResponse(data, safe=False)
+        return JsonResponse(
+            data,
+            safe=False
+        )
 
     except Exception as e:
-        return JsonResponse({"error": str(e)}, status=500)
+
+        return JsonResponse({
+            "error": str(e)
+        }, status=500)
 
 
+# ============================================================
+# ALL COINS / PAGINATED MARKET
+# ============================================================
 
-from django.core.cache import cache
-from .services.market.constants import (DEFAULT_PER_PAGE, CACHE_LOCK_WAIT, ACTIVE_MARKET_PAGE_KEY)
-from .services.market.cache import MarketCache
 
-
+@api_view(["GET"])
+@permission_classes([AllowAny])
 def all_coins(request):
 
-    page = int(
-        request.GET.get(
-            "page",
-            1,
-        )
-    )
+    try:
 
+        page = int(
+            request.GET.get(
+                "page",
+                1
+            )
+        )
+
+        if page < 1:
+            page = 1
+
+    except ValueError:
+
+        return JsonResponse({
+            "success": False,
+            "error": "Invalid page."
+        }, status=400)
 
     cache.set(
         ACTIVE_MARKET_PAGE_KEY,
         page,
         None
     )
+
     market_cache = MarketCache()
 
-    # =========================================================
+    # ========================================================
     # CACHE HIT
-    # =========================================================
+    # ========================================================
 
     data = cache.get(
         f"market_page_{page}"
@@ -894,16 +1695,12 @@ def all_coins(request):
 
         return JsonResponse(
             data,
-            safe=False,
+            safe=False
         )
 
-    # =========================================================
-    # PAGE 1
-    # =========================================================
-
-    # =========================================================
-    # TRY TO ACQUIRE LOCK
-    # =========================================================
+    # ========================================================
+    # ACQUIRE LOCK
+    # ========================================================
 
     lock_acquired = (
         market_cache.acquire_lock(
@@ -911,18 +1708,13 @@ def all_coins(request):
         )
     )
 
-    # =========================================================
+    # ========================================================
     # WE GOT THE LOCK
-    # =========================================================
+    # ========================================================
 
     if lock_acquired:
 
         try:
-
-            # Check cache AGAIN.
-            #
-            # Another request might have populated it
-            # just before we acquired the lock.
 
             data = market_cache.load(
                 page
@@ -932,12 +1724,12 @@ def all_coins(request):
 
                 return JsonResponse(
                     data,
-                    safe=False,
+                    safe=False
                 )
 
-            # -------------------------------------------------
-            # FETCH FROM COINGECKO
-            # -------------------------------------------------
+            # ------------------------------------------------
+            # FETCH MARKET DATA
+            # ------------------------------------------------
 
             fetcher = MarketFetcher()
 
@@ -948,29 +1740,26 @@ def all_coins(request):
 
             if data is None:
 
-                return JsonResponse(
-                    {
-                        "error": (
-                            "Unable to fetch "
-                            "market data."
-                        ),
-                        "page": page,
-                    },
-                    status=503,
-                )
+                return JsonResponse({
+                    "error": (
+                        "Unable to fetch "
+                        "market data."
+                    ),
+                    "page": page,
+                }, status=503)
 
-            # -------------------------------------------------
-            # SAVE
-            # -------------------------------------------------
+            # ------------------------------------------------
+            # SAVE CACHE
+            # ------------------------------------------------
 
             market_cache.save(
                 page,
-                data,
+                data
             )
 
             return JsonResponse(
                 data,
-                safe=False,
+                safe=False
             )
 
         finally:
@@ -979,9 +1768,10 @@ def all_coins(request):
                 page
             )
 
-    # =========================================================
+    # ========================================================
     # SOMEONE ELSE IS FETCHING
-    # =========================================================
+    # ========================================================
+
     waited = 0
 
     while waited < 30:
@@ -991,9 +1781,10 @@ def all_coins(request):
         )
 
         if data:
+
             return JsonResponse(
                 data,
-                safe=False,
+                safe=False
             )
 
         time.sleep(
@@ -1002,41 +1793,67 @@ def all_coins(request):
 
         waited += CACHE_LOCK_WAIT
 
-    return JsonResponse(
-        {
-            "error": "Market data is currently being fetched.",
-            "page": page,
-        },
-        status=503,
-    )
+    return JsonResponse({
+        "error": (
+            "Market data is currently "
+            "being fetched."
+        ),
+        "page": page,
+    }, status=503)
 
 
+# ============================================================
+# TRENDING COINS
+# ============================================================
 
 
-
+@api_view(["GET"])
+@permission_classes([AllowAny])
 def list_Trending(request):
 
     cache_key = "trending_coins"
 
-    cached = cache.get(cache_key)
+    cached = cache.get(
+        cache_key
+    )
 
     if cached:
 
-        return JsonResponse(cached, safe=False)
+        return JsonResponse(
+            cached,
+            safe=False
+        )
 
-    data = get_trending_coins()
+    try:
 
-    cache.set(cache_key, data, timeout=300)
+        data = get_trending_coins()
 
-    return JsonResponse(data, safe=False)
+        cache.set(
+            cache_key,
+            data,
+            timeout=300
+        )
+
+        return JsonResponse(
+            data,
+            safe=False
+        )
+
+    except Exception as e:
+
+        return JsonResponse({
+            "success": False,
+            "error": str(e)
+        }, status=503)
 
 
+# ============================================================
+# SEARCH COINS
+# ============================================================
 
 
-
-from django.http import JsonResponse
-
-
+@api_view(["GET"])
+@permission_classes([AllowAny])
 def search_coins(request):
 
     query = request.GET.get(
@@ -1053,24 +1870,26 @@ def search_coins(request):
 
     fetcher = MarketFetcher()
 
-    # ----------------------------------------
-    # Find coins matching search text
-    # ----------------------------------------
+    # ========================================================
+    # SEARCH
+    # ========================================================
 
-    search_results = fetcher.search_coins(query)
-
-    # IMPORTANT:
-    # None = request failed
-    # []   = request succeeded but no results
+    search_results = (
+        fetcher.search_coins(
+            query
+        )
+    )
 
     if search_results is None:
 
         return JsonResponse({
             "success": False,
-            "error": "Unable to search coins right now.",
+            "error": (
+                "Unable to search "
+                "coins right now."
+            ),
             "code": "SEARCH_FAILED"
         }, status=503)
-
 
     if not search_results:
 
@@ -1079,14 +1898,18 @@ def search_coins(request):
             "coins": []
         })
 
-    # ----------------------------------------
-    # Get CoinGecko IDs
-    # ----------------------------------------
+    # ========================================================
+    # COIN IDS
+    # ========================================================
 
     coin_ids = [
+
         coin["id"]
+
         for coin in search_results[:10]
+
         if coin.get("id")
+
     ]
 
     if not coin_ids:
@@ -1096,29 +1919,26 @@ def search_coins(request):
             "coins": []
         })
 
-    # ----------------------------------------
-    # Get full market information
-    # ----------------------------------------
+    # ========================================================
+    # MARKET DATA
+    # ========================================================
 
-    market_coins = fetcher.fetch_coins_by_ids(
-        coin_ids
+    market_coins = (
+        fetcher.fetch_coins_by_ids(
+            coin_ids
+        )
     )
-
-    # IMPORTANT:
-    # None = CoinGecko request failed
-    # []   = successful request but no market data
 
     if market_coins is None:
 
         return JsonResponse({
             "success": False,
-            "error": "Coin market data is temporarily unavailable.",
+            "error": (
+                "Coin market data is "
+                "temporarily unavailable."
+            ),
             "code": "MARKET_UNAVAILABLE"
         }, status=503)
-
-    # ----------------------------------------
-    # Success
-    # ----------------------------------------
 
     return JsonResponse({
         "success": True,
@@ -1126,18 +1946,533 @@ def search_coins(request):
     })
 
 
+# ============================================================
+# LATEST NEWS
+# ============================================================
 
 
+@api_view(["GET"])
+@permission_classes([AllowAny])
 def fetch_latest_news(request):
 
-    categories = request.GET.get("categories", "BTC,ETH,SOL,XRP")
+    articles = (
+        NewsArticle.objects
+        .order_by("-published_at")[:50]
+    )
 
-    data = _fetch_crypto_news(categories=categories)
+    data = []
 
-    return JsonResponse(data, safe=False)
+    for article in articles:
+
+        data.append({
+
+            "title": article.title,
+
+            "description": (
+                article.description
+            ),
+
+            "author": article.author,
+
+            "source": article.source,
+
+            "url": article.url,
+
+            "source_name": (
+                article.source_name
+            ),
+
+            "source_img": (
+                article.source_img
+            ),
+
+            "image_url": (
+                article.image_url
+            ),
+
+            "published_at": (
+                article.published_at.isoformat()
+                if article.published_at
+                else None
+            ),
+
+            "category": (
+                article.category
+            ),
+        })
+
+    return JsonResponse({
+        "success": True,
+        "data": data,
+    })
+
+
+# ============================================================
+# MARKET BRIEF
+# ============================================================
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def market_brief(request):
+
+    cache_key = "market_brief"
+
+    cached = cache.get(
+        cache_key
+    )
+
+    if cached:
+
+        return JsonResponse({
+            "success": True,
+            "data": cached,
+        })
+
+    try:
+
+        global_data = (
+            fetch_market_global_data()
+        )
+
+
+        data = {
+            **global_data,
+        }
+
+        cache.set(
+            cache_key,
+            data,
+            timeout=300
+        )
+
+        return JsonResponse({
+            "success": True,
+            "data": data,
+        })
+
+    except Exception as e:
+
+        return JsonResponse({
+            "success": False,
+            "error": str(e),
+        }, status=503)
 
 
 
+# ============================================================
+# MARKET INSIGHTS
+# ============================================================
+
+
+def build_market_insights():
+
+    articles = (
+        NewsArticle.objects
+        .filter(
+            category__isnull=False
+        )
+        .exclude(
+            category=""
+        )
+        .order_by(
+            "-published_at"
+        )[:20]
+    )
+
+    insights = []
+
+    for article in articles:
+
+        categories = (
+            article.category.split("|")
+        )
+
+        symbol = next(
+            (
+                category
+
+                for category in categories
+
+                if category != "CRYPTOCURRENCY"
+
+            ),
+            None
+        )
+
+        if not symbol:
+
+            continue
+
+        insights.append({
+
+            "title": article.title,
+
+            "source": (
+                article.source_name
+            ),
+
+            "url": article.url,
+
+            "published_at": (
+                article.published_at
+            ),
+
+            "symbol": symbol,
+
+            "image_url": (
+                article.image_url
+            ),
+
+            "source_img": (
+                article.source_img
+            ),
+        })
+
+        if len(insights) == 10:
+
+            break
+
+    return insights
+
+
+# ============================================================
+# GET MARKET INSIGHTS
+# ============================================================
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def get_markets_insights(request):
+
+    insights = (
+        build_market_insights()
+    )
+
+    return JsonResponse({
+        "success": True,
+        "data": insights
+    })
+
+
+# ============================================================
+# NEWS BY SECTION
+# ============================================================
+
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def get_news_by_section(request):
+
+    section = request.GET.get(
+        "section"
+    )
+
+    if section == "all":
+
+        articles = (
+            NewsArticle.objects
+            .order_by("-published_at")
+        )
+
+    else:
+
+        articles = (
+            NewsArticle.objects
+            .filter(
+                section=section
+            )
+            .order_by(
+                "-published_at"
+            )
+        )
+
+    news = []
+
+    for article in articles:
+
+        news.append({
+
+            "id": article.id,
+
+            "title": article.title,
+
+            "description": (
+                article.description
+            ),
+
+            "author": article.author,
+
+            "source": article.source,
+
+            "source_name": (
+                article.source_name
+            ),
+
+            "source_img": (
+                article.source_img
+            ),
+
+            "url": article.url,
+
+            "image_url": (
+                article.image_url
+            ),
+
+            "published_at": (
+                article.published_at.isoformat()
+                if article.published_at
+                else None
+            ),
+
+            "category": (
+                article.category
+            ),
+
+            "section": (
+                article.section
+            ),
+
+            "popularity_score": (
+                article.popularity_Score
+            ),
+        })
+
+    return JsonResponse({
+
+        "success": True,
+
+        "data": news,
+
+        "length": len(news),
+
+        "section": section,
+
+    })
+
+
+# ============================================================
+# MARKET SNAPSHOT
+# ============================================================
+
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def get_market_snapshot(request):
+
+    cache_key = "market_snapshot"
+
+    snapshot = cache.get(
+        cache_key
+    )
+
+    if not snapshot:
+
+        return JsonResponse({
+            "success": False,
+            "data": []
+        })
+
+    return JsonResponse({
+        "success": True,
+        "data": snapshot,
+    })
+
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def check_if_authenticated(request):
+    return Response({
+        "authenticated": True,
+        "user": {
+            "username": request.user.username,
+            "id": request.user.id,
+            "email": request.user.email,
+        }
+    })
+
+
+MARKET_CAP_RANGE = {
+    "24h": timedelta(hours=24),
+    "7d": timedelta(days=7),
+    "30d": timedelta(days=30),
+    "90d": timedelta(days=90),
+    "1y": timedelta(days=365)
+}
+
+@require_GET
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def Market_Cap_Trend(request):
+
+    # FULLTIME KING_SELAH REMEMBER TO PUSH ADD A HOSTING PROVIDER SCHEDULER, IT'S USING SYSTEM TASK SCHEDULER NOW
+    
+    selected_range = request.GET.get("range", "24h")
+
+    duration = MARKET_CAP_RANGE.get(selected_range)
+    
+    if duration is None:
+        return JsonResponse({
+            "success": False,
+            "error": "Invalid range",
+            "supported_ranges": list(MARKET_CAP_RANGE),
+        }, status=400)
+
+    end_time = timezone.now()
+    start_time = end_time - duration
+
+
+    snapshots = MarketCapSnapShot.objects.filter(
+        timeStamp__gte=start_time,
+        timeStamp__lte=end_time
+    ).order_by("timeStamp")
+
+    merged_data = {
+        snapshot.timeStamp.isoformat(): {
+            "timestamp": snapshot.timeStamp.isoformat(),
+            "market_cap": float(snapshot.market_cap_usd),
+            "source": "database",
+        }
+
+        for snapshot in snapshots
+    }
+
+
+    cache_key = f"cmc_global_history_{selected_range}"
+    historical_data = cache.get(cache_key)
+
+    if historical_data is None:
+        try:
+            historical_data = get_global_market_cap_history(
+                start_time,
+                end_time,
+                interval="daily"
+            )
+
+            cache.set(cache_key, historical_data, 3600)
+
+        except Exception:
+            # Keep locally collected data available if
+            # the historical provider is temporarily down.
+            historical_data = None
+
+
+    if historical_data:
+        for item in historical_data:
+            timestamp = item["timestamp"]
+            market_cap = item["market_cap"]
+
+            from django.utils.dateparse import parse_datetime
+
+            parsed_timestamp = parse_datetime(timestamp)
+
+            if parsed_timestamp is None:
+                continue
+
+            if timezone.is_naive(parsed_timestamp):
+                parsed_timestamp = timezone.make_aware(
+                    parsed_timestamp,
+                    timezone=timezone.utc,
+                )
+
+            if start_time <= parsed_timestamp <= end_time:
+                key = parsed_timestamp.isoformat()
+
+                merged_data.setdefault(key, {
+                    "timestamp": key,
+                    "market_cap": float(market_cap),
+                    "source": "CoinMarketCap"
+                })
+
+    data = sorted(
+        merged_data.values(),
+        key=lambda item: item["timestamp"]
+    )
+
+    return JsonResponse({
+        "success": True,
+        "range": selected_range,
+        "data": data,
+        "count": len(data),
+        "history_start": data[0]["timestamp"] if data else None,
+        "history_end": data[-1]["timestamp"] if data else None,
+    })
+
+
+
+
+def fear_greed_view(request):
+    try:
+        data = fetch_fear_greed()
+        return JsonResponse(data)
+
+    except (ValueError, KeyError, TypeError):
+        return JsonResponse(
+            {"error": "Invalid Fear & Greed API response."},
+            status=502,
+        )
+
+    except requests.RequestException:
+        return JsonResponse(
+            {"error": "Fear & Greed service is temporarily unavailable."},
+            status=502,
+        )
+
+
+
+@api_view(["GET"])
+def volume_price_correlation(request):
+
+    symbol = request.query_params.get(
+        "symbol",
+        "BTCUSDT",
+    ).upper()
+
+
+    days = request.query_params.get("days", 1)
+
+    import re
+    
+    if not re.fullmatch(
+        r"[A-Z0-9]{5,20}",
+        symbol
+    ):
+        return Response({
+            "success": False,
+            "message": "Invalid symbol"
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+    try:
+        data = get_volume_price_correlation(
+            symbol=symbol,
+            days=int(days)
+        )
+
+        print("VOLUME_DATA", data)
+
+        return Response(data)
+
+    except ValueError as error:
+        return Response(
+            {"success": False, "message": str(error)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    except requests.RequestException as error:
+
+        print("Error:", error)
+
+        return Response(
+            {
+                "success": False,
+                "message": "Binance market data unavailable.",
+            },
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
 
 
 
